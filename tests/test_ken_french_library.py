@@ -173,6 +173,48 @@ def test_load_decile_returns_rejects_unknown_strategy():
         french._load_decile_returns("unknown")
 
 
+def test_load_decile_returns_accepts_live_hyphenated_column_names(monkeypatch):
+    source = pd.DataFrame(
+        {
+            "Lo 10": [1.0],
+            **{f"{number}-Dec": [float(number)] for number in range(2, 10)},
+            "Hi 10": [10.0],
+        },
+        index=pd.period_range("2020-01", periods=1, freq="M"),
+    )
+    monkeypatch.setattr(
+        french,
+        "_load_french_dataset",
+        lambda dataset, start_date=None, end_date=None: {0: source},
+    )
+
+    result = french._load_decile_returns("momentum")
+
+    assert list(result.columns) == [f"Dec {i}" for i in range(1, 11)]
+    assert result.iloc[0]["Dec 2"] == pytest.approx(0.02)
+
+
+def test_load_decile_returns_accepts_prior_column_names(monkeypatch):
+    source = pd.DataFrame(
+        {
+            "Lo PRIOR": [1.0],
+            **{f"PRIOR {number}": [float(number)] for number in range(2, 10)},
+            "Hi PRIOR": [10.0],
+        },
+        index=pd.period_range("2020-01", periods=1, freq="M"),
+    )
+    monkeypatch.setattr(
+        french,
+        "_load_french_dataset",
+        lambda dataset, start_date=None, end_date=None: {0: source},
+    )
+
+    result = french._load_decile_returns("momentum")
+
+    assert list(result.columns) == [f"Dec {i}" for i in range(1, 11)]
+    assert result.iloc[0]["Dec 10"] == pytest.approx(0.10)
+
+
 def test_get_ff3_returns_monthly_decimal_factors(monkeypatch):
     """FF3 should return monthly factors converted from percentages to decimals."""
     source = pd.DataFrame(
@@ -303,6 +345,108 @@ def test_get_ff5d_returns_filtered_daily_decimal_factors(monkeypatch):
     assert result.iloc[0]["RMW"] == pytest.approx(-0.001)
     assert result.iloc[0]["CMA"] == pytest.approx(0.003)
     assert result.iloc[0]["RF"] == pytest.approx(0.0001)
+
+
+def test_unified_loader_dispatches_factor_data(monkeypatch):
+    source = pd.DataFrame(
+        {
+            "Mkt-RF": [2.00],
+            "SMB": [1.00],
+            "HML": [-0.50],
+            "RF": [0.10],
+        },
+        index=pd.period_range("2020-01", periods=1, freq="M"),
+    )
+    calls = []
+
+    def fake_loader(dataset, start_date=None, end_date=None):
+        calls.append((dataset, start_date, end_date))
+        return {0: source}
+
+    monkeypatch.setattr(french, "_load_french_dataset", fake_loader)
+
+    result = french.load_ken_french_data(
+        "ff3",
+        start_date="2020-01",
+        end_date="2020-01",
+    )
+
+    assert calls == [
+        ("F-F_Research_Data_Factors", "2020-01", "2020-01")
+    ]
+    assert list(result.columns) == ["Mkt-RF", "SMB", "HML", "RF"]
+    assert result.iloc[0]["Mkt-RF"] == pytest.approx(0.02)
+
+
+def test_unified_loader_selects_portfolios_without_adding_factors(monkeypatch):
+    monkeypatch.setattr(
+        french,
+        "_load_decile_returns",
+        lambda strategy, start_date=None, end_date=None: _sample_deciles(),
+    )
+
+    result = french.load_ken_french_data(
+        "deciles",
+        strategy="momentum",
+        portfolio=[1, 10],
+    )
+
+    assert list(result.columns) == ["Dec 1", "Dec 10"]
+    assert result.iloc[0]["Dec 1"] == pytest.approx(-0.02)
+    assert result.iloc[0]["Dec 10"] == pytest.approx(0.07)
+
+
+def test_unified_loader_can_merge_requested_factors(monkeypatch):
+    monkeypatch.setattr(
+        french,
+        "_load_decile_returns",
+        lambda strategy, start_date=None, end_date=None: _sample_deciles(),
+    )
+    monkeypatch.setattr(french, "get_ff3", _sample_ff3)
+
+    result = french.load_ken_french_data(
+        "deciles",
+        strategy="momentum",
+        portfolio="high",
+        include_factors="ff3",
+    )
+
+    assert list(result.columns) == [
+        "Dec 10",
+        "mkt-rf",
+        "smb",
+        "hml",
+        "rf",
+    ]
+    assert result.iloc[0]["Dec 10"] == pytest.approx(0.07)
+    assert result.iloc[0]["mkt-rf"] == pytest.approx(-0.01)
+
+
+def test_unified_loader_supports_quintile_portfolios(monkeypatch):
+    source = pd.DataFrame(
+        {
+            "Lo 20": [1.0],
+            "Qnt 2": [2.0],
+            "Qnt 3": [3.0],
+            "Qnt 4": [4.0],
+            "Hi 20": [5.0],
+        },
+        index=pd.period_range("2020-01", periods=1, freq="M"),
+    )
+    monkeypatch.setattr(
+        french,
+        "_load_french_dataset",
+        lambda dataset, start_date=None, end_date=None: {0: source},
+    )
+
+    result = french.load_ken_french_data(
+        "quintiles",
+        strategy="size",
+        portfolio="high",
+    )
+
+    assert list(result.columns) == ["Qnt 5"]
+    assert result.iloc[0]["Qnt 5"] == pytest.approx(0.05)
 
 
 def _sample_deciles():

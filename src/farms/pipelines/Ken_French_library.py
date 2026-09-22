@@ -2,6 +2,30 @@ import pandas as pd
 from pandas_datareader import data as web
 
 
+_FACTOR_DATASETS = {
+    "ff3": {
+        "monthly": {
+            "dataset": "F-F_Research_Data_Factors",
+            "table": 0,
+        },
+        "daily": {
+            "dataset": "F-F_Research_Data_Factors_daily",
+            "table": 0,
+        },
+    },
+    "ff5": {
+        "monthly": {
+            "dataset": "F-F_Research_Data_5_Factors_2x3",
+            "table": 0,
+        },
+        "daily": {
+            "dataset": "F-F_Research_Data_5_Factors_2x3_daily",
+            "table": 0,
+        },
+    },
+}
+
+
 _DECILE_DATASETS = {
     "accruals": {
         "dataset": "Portfolios_Formed_on_AC",
@@ -76,6 +100,47 @@ _DECILE_COLUMNS = [
     "Hi 10",
 ]
 
+_DECILE_OUTPUT_COLUMNS = [f"Dec {number}" for number in range(1, 11)]
+_DECILE_SOURCE_ALIASES = {
+    "Dec 1": ("Lo 10", "Lo PRIOR", "Dec 1", "PRIOR 1"),
+    **{
+        f"Dec {number}": (
+            f"{number}-Dec",
+            f"Dec {number}",
+            f"PRIOR {number}",
+        )
+        for number in range(2, 10)
+    },
+    "Dec 10": ("Hi 10", "Hi PRIOR", "Dec 10", "PRIOR 10"),
+}
+
+_PORTFOLIO_VIEWS = {
+    "deciles": {
+        "count": 10,
+        "prefix": "Dec",
+        "source_columns": _DECILE_COLUMNS,
+        "output_columns": _DECILE_OUTPUT_COLUMNS,
+    },
+    "quintiles": {
+        "count": 5,
+        "prefix": "Qnt",
+        "source_columns": [
+            "Lo 20",
+            "Qnt 2",
+            "Qnt 3",
+            "Qnt 4",
+            "Hi 20",
+        ],
+        "output_columns": [f"Qnt {number}" for number in range(1, 6)],
+    },
+}
+
+_QUINTILE_DATASETS = {
+    strategy: config
+    for strategy, config in _DECILE_DATASETS.items()
+    if strategy not in {"momentum", "shorttermreversal"}
+}
+
 
 def _load_french_dataset(dataset, start_date=None, end_date=None):
     """Load a dataset from the Kenneth French Data Library."""
@@ -128,79 +193,326 @@ def _load_decile_returns(strategy, start_date=None, end_date=None):
     )
     table = result[config["table"]].copy()
 
-    missing_columns = [column for column in _DECILE_COLUMNS if column not in table]
+    source_columns, missing_columns = _resolve_portfolio_source_columns(
+        table,
+        "deciles",
+    )
     if missing_columns:
         raise ValueError(
             f"{config['dataset']} table {config['table']} is missing expected "
             f"decile columns: {', '.join(missing_columns)}."
         )
 
-    deciles = table.loc[:, _DECILE_COLUMNS].copy()
-    deciles.columns = [f"Dec {number}" for number in range(1, 11)]
+    deciles = table.loc[:, source_columns].copy()
+    deciles.columns = _DECILE_OUTPUT_COLUMNS
     deciles = deciles.apply(pd.to_numeric, errors="coerce") / 100
     deciles.index.name = "date"
     return deciles
 
 
-def get_ff5(start_date=None, end_date=None):
-    """Return monthly Fama-French five-factor data as decimal returns."""
+def _resolve_portfolio_source_columns(table, granularity, strategy=None):
+    """Resolve source column aliases into the canonical portfolio order."""
+    def normalize_column_name(column):
+        if isinstance(column, tuple):
+            parts = [normalize_column_name(part) for part in column]
+            return " ".join(part for part in parts if part)
+        return " ".join(str(column).strip().split())
+
+    if granularity == "deciles":
+        aliases = _DECILE_SOURCE_ALIASES
+    else:
+        aliases = {
+            column: (column,)
+            for column in _PORTFOLIO_VIEWS[granularity]["source_columns"]
+        }
+
+    table_columns = {
+        normalize_column_name(column): column for column in table.columns
+    }
+    source_columns = []
+    missing_columns = []
+    for output_column, candidates in aliases.items():
+        source_column = next(
+            (
+                table_columns[normalize_column_name(candidate)]
+                for candidate in candidates
+                if normalize_column_name(candidate) in table_columns
+            ),
+            None,
+        )
+        if source_column is None:
+            missing_columns.append(output_column)
+        else:
+            source_columns.append(source_column)
+    return source_columns, missing_columns
+
+
+def _load_factor_returns(model, frequency, start_date=None, end_date=None):
+    """Load and normalize a registered Fama-French factor dataset."""
+    try:
+        config = _FACTOR_DATASETS[model][frequency]
+    except KeyError as exc:
+        supported_models = ", ".join(sorted(_FACTOR_DATASETS))
+        raise ValueError(
+            f"Unsupported factor selection {model!r} at {frequency!r} "
+            f"frequency. Choose a model from: {supported_models}."
+        ) from exc
+
     result = _load_french_dataset(
-        "F-F_Research_Data_5_Factors_2x3",
+        config["dataset"],
+        start_date,
+        end_date,
+    )
+    df = result[config["table"]].copy()
+    df = df.apply(pd.to_numeric, errors="coerce") / 100
+
+    if frequency == "daily":
+        if isinstance(df.index, pd.PeriodIndex):
+            df.index = df.index.to_timestamp()
+        df.index.freq = None
+
+    df.index.name = "date"
+    return df
+
+
+def _load_weighted_portfolio_returns(
+    granularity,
+    strategy,
+    weighting="value",
+    start_date=None,
+    end_date=None,
+):
+    """Load registered portfolio returns for the requested view and weighting."""
+    if granularity == "deciles" and weighting == "value":
+        return _load_decile_returns(strategy, start_date, end_date)
+
+    if weighting not in {"value", "equal"}:
+        raise ValueError("weighting must be 'value' or 'equal'.")
+
+    datasets = {
+        "deciles": _DECILE_DATASETS,
+        "quintiles": _QUINTILE_DATASETS,
+    }
+    try:
+        config = datasets[granularity][strategy]
+    except KeyError as exc:
+        choices = ", ".join(sorted(datasets[granularity]))
+        raise ValueError(
+            f"Unknown {granularity[:-1]} strategy {strategy!r}. "
+            f"Choose one of: {choices}."
+        ) from exc
+
+    result = _load_french_dataset(
+        config["dataset"],
+        start_date,
+        end_date,
+    )
+    table_number = config["table"] if weighting == "value" else 1
+    if table_number not in result:
+        raise ValueError(
+            f"{config['dataset']} does not provide the requested "
+            f"{weighting}-weighted {granularity} table at index {table_number}."
+        )
+
+    view = _PORTFOLIO_VIEWS[granularity]
+    table = result[table_number].copy()
+    source_columns, missing_columns = _resolve_portfolio_source_columns(
+        table,
+        granularity,
+    )
+    if missing_columns:
+        raise ValueError(
+            f"{config['dataset']} table {table_number} is missing expected "
+            f"{granularity} columns: {', '.join(missing_columns)}."
+        )
+
+    portfolios = table.loc[:, source_columns].copy()
+    portfolios.columns = view["output_columns"]
+    portfolios = portfolios.apply(pd.to_numeric, errors="coerce") / 100
+    portfolios.index.name = "date"
+    return portfolios
+
+
+def _select_portfolios(data, portfolio, view):
+    """Select one or more canonical portfolio columns."""
+    if portfolio is None or (
+        isinstance(portfolio, str) and portfolio.lower() == "all"
+    ):
+        return data
+
+    count = view["count"]
+    prefix = view["prefix"]
+
+    if isinstance(portfolio, str):
+        aliases = {"low": 1, "high": count}
+        try:
+            portfolio_numbers = [aliases[portfolio.lower()]]
+        except KeyError as exc:
+            raise ValueError(
+                "portfolio must be an integer, a sequence of integers, "
+                "'low', 'high', or 'all'."
+            ) from exc
+    elif isinstance(portfolio, int) and not isinstance(portfolio, bool):
+        portfolio_numbers = [portfolio]
+    else:
+        try:
+            portfolio_numbers = list(portfolio)
+        except TypeError as exc:
+            raise ValueError(
+                "portfolio must be an integer, a sequence of integers, "
+                "'low', 'high', or 'all'."
+            ) from exc
+
+    if not portfolio_numbers or any(
+        not isinstance(number, int) or isinstance(number, bool)
+        or not 1 <= number <= count
+        for number in portfolio_numbers
+    ):
+        raise ValueError(
+            f"portfolio numbers must be integers from 1 through {count}."
+        )
+
+    columns = [f"{prefix} {number}" for number in portfolio_numbers]
+    return data.loc[:, columns]
+
+
+def load_ken_french_data(
+    data_type,
+    strategy=None,
+    *,
+    frequency="monthly",
+    start_date=None,
+    end_date=None,
+    portfolio=None,
+    weighting="value",
+    include_factors=None,
+    details=False,
+):
+    """Load normalized data from the Kenneth French Data Library.
+
+    Parameters
+    ----------
+    data_type : {"ff3", "ff5", "deciles", "quintiles"}
+        Select a factor model or portfolio granularity. The aliases ``ff3d``
+        and ``ff5d`` are also accepted and select daily frequency.
+    strategy : str, optional
+        Portfolio sorting strategy, such as ``"momentum"`` or ``"size"``.
+        Required for portfolio data and invalid for factor data.
+    frequency : {"monthly", "daily"}, default "monthly"
+        Factor frequency. Current portfolio datasets are monthly.
+    portfolio : int, sequence of int, {"low", "high", "all"}, optional
+        Portfolio selection. ``None`` and ``"all"`` return every portfolio.
+    weighting : {"value", "equal"}, default "value"
+        Portfolio weighting convention.
+    include_factors : {None, "market", "ff3", "ff5"}, optional
+        Additional monthly factors to merge into portfolio data. ``None``
+        leaves the portfolio data unchanged; ``"market"`` adds ``mkt-rf``
+        and ``rf``.
+    details : bool, default False
+        Print portfolio construction details when available.
+    """
+    normalized_type = str(data_type).lower()
+    if normalized_type in {"ff3d", "ff5d"}:
+        if frequency not in {"monthly", "daily"}:
+            raise ValueError("frequency must be 'monthly' or 'daily'.")
+        normalized_type = normalized_type[:3]
+        frequency = "daily"
+
+    if normalized_type in _FACTOR_DATASETS:
+        if strategy is not None:
+            raise ValueError("strategy is only valid for portfolio data.")
+        if portfolio is not None:
+            raise ValueError("portfolio is only valid for portfolio data.")
+        if weighting != "value":
+            raise ValueError("weighting is only valid for portfolio data.")
+        if include_factors is not None:
+            raise ValueError("include_factors is only valid for portfolio data.")
+        if frequency not in {"monthly", "daily"}:
+            raise ValueError("frequency must be 'monthly' or 'daily'.")
+        return _load_factor_returns(
+            normalized_type,
+            frequency,
+            start_date,
+            end_date,
+        )
+
+    if normalized_type not in {"deciles", "quintiles"}:
+        choices = ", ".join(
+            ["ff3", "ff5", "deciles", "quintiles"]
+        )
+        raise ValueError(
+            f"Unknown Kenneth French data_type {data_type!r}. Choose one of: "
+            f"{choices}."
+        )
+    if strategy is None:
+        raise ValueError("strategy is required for portfolio data.")
+    if frequency != "monthly":
+        raise ValueError("Current Kenneth French portfolio data is monthly only.")
+    view = _PORTFOLIO_VIEWS[normalized_type]
+    data = _load_weighted_portfolio_returns(
+        normalized_type,
+        strategy,
+        weighting,
         start_date,
         end_date,
     )
 
-    df = result[0].copy()
-    df = df.apply(pd.to_numeric, errors="coerce") / 100
-    df.index.name = "date"
-    return df
+    if details is True:
+        metadata = _get_decile_metadata(strategy, data)
+        _print_decile_details(metadata)
+
+    data = _select_portfolios(data, portfolio, view)
+
+    if include_factors is None:
+        return data
+    normalized_factors = str(include_factors).lower()
+    if normalized_factors == "market":
+        factors = None
+    elif normalized_factors in {"ff3", "ff5"}:
+        factors = normalized_factors.upper()
+    else:
+        raise ValueError(
+            "include_factors must be None, 'market', 'ff3', or 'ff5'."
+        )
+    return _merge_decile_factors(data, factors, start_date, end_date)
+
 
 def get_ff3(start_date=None, end_date=None):
     """Return monthly Fama-French three-factor data as decimal returns."""
-    result = _load_french_dataset(
-        "F-F_Research_Data_Factors",
-        start_date,
-        end_date,
+    return load_ken_french_data(
+        "ff3",
+        start_date=start_date,
+        end_date=end_date,
     )
 
-    df = result[0].copy()
-    df = df.apply(pd.to_numeric, errors="coerce") / 100
-    df.index.name = "date"
-    return df
+
+def get_ff5(start_date=None, end_date=None):
+    """Return monthly Fama-French five-factor data as decimal returns."""
+    return load_ken_french_data(
+        "ff5",
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 def get_ff3d(start_date=None, end_date=None):
     """Return daily Fama-French three-factor data as decimal returns."""
-    result = _load_french_dataset(
-        "F-F_Research_Data_Factors_daily",
-        start_date,
-        end_date,
+    return load_ken_french_data(
+        "ff3",
+        frequency="daily",
+        start_date=start_date,
+        end_date=end_date,
     )
-
-    df = result[0].copy()
-    df = df.apply(pd.to_numeric, errors="coerce") / 100
-    if isinstance(df.index, pd.PeriodIndex):
-        df.index = df.index.to_timestamp()
-    df.index.freq = None
-    df.index.name = "date"
-    return df
 
 
 def get_ff5d(start_date=None, end_date=None):
     """Return daily Fama-French five-factor data as decimal returns."""
-    result = _load_french_dataset(
-        "F-F_Research_Data_5_Factors_2x3_daily",
-        start_date,
-        end_date,
+    return load_ken_french_data(
+        "ff5",
+        frequency="daily",
+        start_date=start_date,
+        end_date=end_date,
     )
-
-    df = result[0].copy()
-    df = df.apply(pd.to_numeric, errors="coerce") / 100
-    if isinstance(df.index, pd.PeriodIndex):
-        df.index = df.index.to_timestamp()
-    df.index.freq = None
-    df.index.name = "date"
-    return df
 
 _DECILE_DETAILS = {
     "accruals": (
@@ -355,10 +667,18 @@ def get_ken_french_deciles(
             print(strategy)
         return None
 
-    deciles = _load_decile_returns(stype, start_date, end_date)
+    if factors not in {None, "FF3", "FF5"}:
+        raise ValueError("factors must be None, 'FF3', or 'FF5'.")
 
-    if details is True:
-        metadata = _get_decile_metadata(stype, deciles)
-        _print_decile_details(metadata)
-
-    return _merge_decile_factors(deciles, factors, start_date, end_date)
+    # Preserve the legacy default: this wrapper includes market excess return
+    # and the risk-free rate when factors is omitted. The new unified loader
+    # leaves portfolio data unchanged unless include_factors is requested.
+    include_factors = "market" if factors is None else factors
+    return load_ken_french_data(
+        "deciles",
+        strategy=stype,
+        start_date=start_date,
+        end_date=end_date,
+        include_factors=include_factors,
+        details=details is True,
+    )

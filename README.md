@@ -145,6 +145,47 @@ monthly = farms.get_crsp_msf_by_ids(
 db.close()
 ```
 
+## Unified Kenneth French loader
+
+`load_ken_french_data` is the central loader for normalized Kenneth French
+factor and portfolio data. The existing `get_ff3`, `get_ff5`, `get_ff3d`,
+`get_ff5d`, and `get_ken_french_deciles` functions remain available as
+convenience and compatibility wrappers.
+
+```python
+import farms
+
+# Monthly or daily factors
+ff3 = farms.load_ken_french_data("ff3")
+ff5_daily = farms.load_ken_french_data("ff5", frequency="daily")
+
+# All momentum deciles
+momentum = farms.load_ken_french_data(
+    "deciles",
+    strategy="momentum",
+)
+
+# Selected portfolios plus Fama-French three-factor data
+momentum_extremes = farms.load_ken_french_data(
+    "deciles",
+    strategy="momentum",
+    portfolio=[1, 10],
+    include_factors="ff3",
+)
+```
+
+The first argument can be `"ff3"`, `"ff5"`, `"deciles"`, or
+`"quintiles"`. Factor data currently supports monthly and daily frequencies.
+Portfolio data currently supports the registered monthly decile views for all
+available univariate strategies and quintile views where the source dataset
+provides true quintile columns. Some ten-portfolio prior-return datasets are
+decile-only.
+
+For portfolio data, `portfolio=None` or `"all"` returns every portfolio;
+`portfolio="low"`, `portfolio="high"`, an integer, or a sequence of integers
+selects specific portfolios. `include_factors=None` leaves portfolio data
+unchanged, while `"market"`, `"ff3"`, or `"ff5"` adds factor columns.
+
 ## Fama-French factors
 
 ### Inputs
