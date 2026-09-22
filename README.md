@@ -155,8 +155,9 @@ convenience and compatibility wrappers.
 ```python
 import farms
 
-# Monthly or daily factors
+# Monthly, weekly, or daily factors
 ff3 = farms.load_ken_french_data("ff3")
+ff3_weekly = farms.load_ken_french_data("ff3", frequency="weekly")
 ff5_daily = farms.load_ken_french_data("ff5", frequency="daily")
 
 # All momentum deciles
@@ -175,11 +176,18 @@ momentum_extremes = farms.load_ken_french_data(
 ```
 
 The first argument can be `"ff3"`, `"ff5"`, `"deciles"`, or
-`"quintiles"`. Factor data currently supports monthly and daily frequencies.
-Portfolio data currently supports the registered monthly decile views for all
-available univariate strategies and quintile views where the source dataset
-provides true quintile columns. Some ten-portfolio prior-return datasets are
-decile-only.
+`"quintiles"`. FF3 supports monthly, weekly, and daily frequencies. FF5
+supports monthly and daily frequencies; weekly FF5 returns are not published
+by the Kenneth French Data Library and are therefore rejected by the loader.
+
+Portfolio frequency support depends on the strategy. The loader supports
+monthly data for all registered univariate strategies and daily data for
+strategies with published daily files: size, book-to-market, profitability,
+investment, momentum, and short-term reversal. The daily files provide true
+decile portfolios. Monthly quintile views are available where the source
+dataset provides true quintile columns; some ten-portfolio prior-return
+datasets are decile-only. Weekly univariate decile and quintile data are not
+published for the registered strategies.
 
 For portfolio data, `portfolio=None` or `"all"` returns every portfolio;
 `portfolio="low"`, `portfolio="high"`, an integer, or a sequence of integers
@@ -199,9 +207,8 @@ For Fama-French factor loaders and Kenneth French decile portfolios,
   date available from the Kenneth French Data Library.
 - You may provide either bound independently.
 
-Use month-formatted dates (`YYYY-MM`) for `get_ff3`, `get_ff5`, and decile
-data. For daily factor data (`get_ff3d` and `get_ff5d`), use day-formatted
-dates (`YYYY-MM-DD`).
+Use month-formatted dates (`YYYY-MM`) for monthly data. Use day-formatted
+dates (`YYYY-MM-DD`) for weekly, daily, and daily portfolio data.
 
 ### Outputs
 
@@ -215,6 +222,17 @@ returns in percent.
 | `get_ff5` | Monthly `PeriodIndex` | `Mkt-RF`, `SMB`, `HML`, `RMW`, `CMA`, `RF` |
 | `get_ff3d` | Daily `DatetimeIndex` | `Mkt-RF`, `SMB`, `HML`, `RF` |
 | `get_ff5d` | Daily `DatetimeIndex` | `Mkt-RF`, `SMB`, `HML`, `RMW`, `CMA`, `RF` |
+
+The unified loader also returns weekly FF3 data with a weekly `PeriodIndex`:
+
+```python
+ff3_weekly = farms.load_ken_french_data(
+    "ff3",
+    frequency="weekly",
+    start_date="2020-01-01",
+    end_date="2020-12-31",
+)
+```
 
 ### Examples
 
@@ -239,6 +257,18 @@ import farms
 
 ff3 = farms.get_ff3("2000-01", "2025-12")
 print(ff3.head())
+```
+
+Weekly three-factor data:
+
+```python
+ff3_weekly = farms.load_ken_french_data(
+    "ff3",
+    frequency="weekly",
+    start_date="2020-01-01",
+    end_date="2025-12-31",
+)
+print(ff3_weekly.head())
 ```
 
 Monthly five-factor data:
@@ -270,10 +300,10 @@ from that date through the latest available observation:
 ff5_daily = farms.get_ff5d(start_date="2025-01-01")
 ```
 
-Monthly factor data use a pandas `PeriodIndex`. Daily factor data use a
-pandas `DatetimeIndex`.
+Monthly and weekly factor data use a pandas `PeriodIndex`. Daily factor data
+use a pandas `DatetimeIndex`.
 
-## Kenneth French monthly decile portfolios
+## Kenneth French decile and quintile portfolios
 
 ### Inputs
 
@@ -283,6 +313,23 @@ pandas `DatetimeIndex`.
 | `start_date` | No | `YYYY-MM`; `None` requests the full available history. |
 | `end_date` | No | `YYYY-MM`; `None` requests data through the latest available observation. |
 | `factors` | No | `None` (default), `"FF3"`, or `"FF5"`. |
+
+The unified loader accepts `frequency="daily"` for the six strategies with
+published daily decile files. For example:
+
+```python
+momentum_daily = farms.load_ken_french_data(
+    "deciles",
+    strategy="momentum",
+    frequency="daily",
+    start_date="2020-01-01",
+    end_date="2020-12-31",
+)
+```
+
+The legacy `ff3d` and `ff5d` data-type aliases remain accepted for backward
+compatibility, but the preferred spelling is `"ff3"` or `"ff5"` with
+`frequency="daily"`.
 | `details` | No | Set to `True` to print the strategy title, construction details, and available dates. |
 
 ### Output

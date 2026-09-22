@@ -84,12 +84,22 @@ def test_decile_registry_contains_all_supported_strategies():
         "variance",
     }
     assert all(
-        set(config) == {"dataset", "title", "table"}
+        {"dataset", "title", "table", "frequencies"}.issubset(config)
         for config in french._DECILE_DATASETS.values()
     )
     assert all(
         config["table"] == 0 for config in french._DECILE_DATASETS.values()
     )
+    assert set(french._QUINTILE_DATASETS) == {
+        strategy
+        for strategy, config in french._DECILE_DATASETS.items()
+        if "quintiles" in config["frequencies"]["monthly"]["granularities"]
+    }
+    assert set(french._DECILE_DATASETS["momentum"]["frequencies"]) == {
+        "monthly",
+        "daily",
+    }
+    assert "daily" not in french._DECILE_DATASETS["accruals"]["frequencies"]
 
 
 def test_inspect_french_dataset_summarizes_dataframes(monkeypatch):
@@ -347,6 +357,41 @@ def test_get_ff5d_returns_filtered_daily_decimal_factors(monkeypatch):
     assert result.iloc[0]["RF"] == pytest.approx(0.0001)
 
 
+def test_get_ff3_weekly_returns_period_index_and_decimal_factors(monkeypatch):
+    """Weekly FF3 should use the published weekly source dataset."""
+    source = pd.DataFrame(
+        {
+            "Mkt-RF": [2.00],
+            "SMB": [0.25],
+            "HML": [0.50],
+            "RF": [0.01],
+        },
+        index=pd.period_range("2020-01-03", periods=1, freq="W-FRI"),
+    )
+    calls = []
+
+    def fake_loader(dataset, start_date=None, end_date=None):
+        calls.append((dataset, start_date, end_date))
+        return {0: source}
+
+    monkeypatch.setattr(french, "_load_french_dataset", fake_loader)
+
+    result = french.load_ken_french_data(
+        "ff3",
+        frequency="weekly",
+        start_date="2020-01-01",
+        end_date="2020-01-31",
+    )
+
+    assert calls == [
+        ("F-F_Research_Data_Factors_weekly", "2020-01-01", "2020-01-31")
+    ]
+    assert isinstance(result.index, pd.PeriodIndex)
+    assert result.index.freqstr == "W-FRI"
+    assert result.iloc[0]["Mkt-RF"] == pytest.approx(0.02)
+    assert result.iloc[0]["RF"] == pytest.approx(0.0001)
+
+
 def test_unified_loader_dispatches_factor_data(monkeypatch):
     source = pd.DataFrame(
         {
@@ -376,6 +421,88 @@ def test_unified_loader_dispatches_factor_data(monkeypatch):
     ]
     assert list(result.columns) == ["Mkt-RF", "SMB", "HML", "RF"]
     assert result.iloc[0]["Mkt-RF"] == pytest.approx(0.02)
+
+
+def test_unified_loader_accepts_legacy_daily_factor_alias(monkeypatch):
+    source = pd.DataFrame(
+        {
+            "Mkt-RF": [2.00],
+            "SMB": [1.00],
+            "HML": [-0.50],
+            "RF": [0.10],
+        },
+        index=pd.period_range("2020-01-03", periods=1, freq="D"),
+    )
+    calls = []
+
+    def fake_loader(dataset, start_date=None, end_date=None):
+        calls.append((dataset, start_date, end_date))
+        return {0: source}
+
+    monkeypatch.setattr(french, "_load_french_dataset", fake_loader)
+
+    result = french.load_ken_french_data("ff3d")
+
+    assert calls == [("F-F_Research_Data_Factors_daily", None, None)]
+    assert isinstance(result.index, pd.DatetimeIndex)
+
+
+def test_unified_loader_rejects_weekly_ff5():
+    with pytest.raises(ValueError, match="Weekly FF5 data are not published"):
+        french.load_ken_french_data("ff5", frequency="weekly")
+
+
+def test_unified_loader_loads_daily_momentum_deciles(monkeypatch):
+    source = pd.DataFrame(
+        {
+            "Lo PRIOR": [1.0],
+            **{f"PRIOR {number}": [float(number)] for number in range(2, 10)},
+            "Hi PRIOR": [10.0],
+        },
+        index=pd.period_range("2020-01-03", periods=1, freq="D"),
+    )
+    calls = []
+
+    def fake_loader(dataset, start_date=None, end_date=None):
+        calls.append((dataset, start_date, end_date))
+        return {0: source}
+
+    monkeypatch.setattr(french, "_load_french_dataset", fake_loader)
+
+    result = french.load_ken_french_data(
+        "deciles",
+        strategy="momentum",
+        frequency="daily",
+        portfolio=[1, 10],
+        start_date="2020-01-03",
+        end_date="2020-01-03",
+    )
+
+    assert calls == [
+        ("10_Portfolios_Prior_12_2_Daily", "2020-01-03", "2020-01-03")
+    ]
+    assert list(result.columns) == ["Dec 1", "Dec 10"]
+    assert isinstance(result.index, pd.DatetimeIndex)
+    assert result.iloc[0]["Dec 1"] == pytest.approx(0.01)
+    assert result.iloc[0]["Dec 10"] == pytest.approx(0.10)
+
+
+def test_unified_loader_rejects_daily_quintiles_without_true_source():
+    with pytest.raises(ValueError, match="does not provide true quintiles"):
+        french.load_ken_french_data(
+            "quintiles",
+            strategy="size",
+            frequency="daily",
+        )
+
+
+def test_unified_loader_rejects_weekly_registered_strategy():
+    with pytest.raises(ValueError, match="does not provide 'weekly' data"):
+        french.load_ken_french_data(
+            "deciles",
+            strategy="momentum",
+            frequency="weekly",
+        )
 
 
 def test_unified_loader_selects_portfolios_without_adding_factors(monkeypatch):
