@@ -488,16 +488,23 @@ def test_unified_loader_loads_daily_momentum_deciles(monkeypatch):
 
 
 def test_unified_loader_rejects_daily_quintiles_without_true_source():
-    with pytest.raises(ValueError, match="does not provide true quintiles"):
+    with pytest.raises(ValueError) as error:
         french.load_ken_french_data(
             "quintiles",
             strategy="size",
             frequency="daily",
         )
 
+    message = str(error.value)
+    assert "strategy='size'" in message
+    assert "data_type='quintiles'" in message
+    assert "frequency='daily'" in message
+    assert "not published by the Kenneth French Data Library" in message
+    assert "monthly (deciles, quintiles); daily (deciles)" in message
+
 
 def test_unified_loader_rejects_weekly_registered_strategy():
-    with pytest.raises(ValueError, match="does not provide 'weekly' data"):
+    with pytest.raises(ValueError, match="not published by the Kenneth French Data Library"):
         french.load_ken_french_data(
             "deciles",
             strategy="momentum",

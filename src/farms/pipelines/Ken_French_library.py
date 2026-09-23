@@ -223,17 +223,17 @@ def _get_portfolio_source_config(strategy, frequency, granularity):
         ) from exc
 
     source_config = strategy_config["frequencies"].get(frequency)
-    if source_config is None:
-        available = ", ".join(strategy_config["frequencies"])
-        raise ValueError(
-            f"Strategy {strategy!r} does not provide {frequency!r} data. "
-            f"Available frequencies: {available}."
+    if source_config is None or granularity not in source_config["granularities"]:
+        published_options = "; ".join(
+            f"{published_frequency} ({', '.join(config['granularities'])})"
+            for published_frequency, config in strategy_config["frequencies"].items()
         )
-
-    if granularity not in source_config["granularities"]:
         raise ValueError(
-            f"Strategy {strategy!r} does not provide true {granularity} "
-            f"at {frequency!r} frequency."
+            "Unavailable Ken French portfolio request: "
+            f"strategy={strategy!r}, data_type={granularity!r}, "
+            f"frequency={frequency!r}. This combination is not published "
+            "by the Kenneth French Data Library. "
+            f"Published options for {strategy!r}: {published_options}."
         )
     return source_config
 
