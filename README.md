@@ -189,6 +189,19 @@ dataset provides true quintile columns; some ten-portfolio prior-return
 datasets are decile-only. Weekly univariate decile and quintile data are not
 published for the registered strategies.
 
+Use `list_ken_french_data()` to inspect the registered strategy sources without
+downloading returns:
+
+```python
+available = farms.list_ken_french_data()
+available[available["strategy"] == "size"]
+```
+
+The result identifies each strategy's available decile or quintile view,
+frequency, and underlying Kenneth French dataset. The `weighting` input remains
+available when loading a listed source and can request either value-weighted or
+equal-weighted returns when the source provides that table.
+
 For portfolio data, `portfolio=None` or `"all"` returns every portfolio;
 `portfolio="low"`, `portfolio="high"`, an integer, or a sequence of integers
 selects specific portfolios. `include_factors=None` leaves portfolio data

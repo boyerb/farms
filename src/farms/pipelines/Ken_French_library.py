@@ -166,6 +166,51 @@ _QUINTILE_DATASETS = {
 }
 
 
+def list_ken_french_data():
+    """List registered Ken French portfolio strategy sources.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row for each registered strategy, portfolio granularity, and
+        frequency combination. This is a local registry lookup and does not
+        download data. The ``weighting`` argument of
+        :func:`load_ken_french_data` can be set to ``"value"`` or ``"equal"``
+        when loading a listed portfolio source; the loader validates that the
+        requested weighting table exists in the source file.
+    """
+    frequency_order = {"monthly": 0, "weekly": 1, "daily": 2}
+    rows = []
+
+    for strategy in sorted(_DECILE_DATASETS):
+        strategy_config = _DECILE_DATASETS[strategy]
+        for frequency, source_config in sorted(
+            strategy_config["frequencies"].items(),
+            key=lambda item: frequency_order.get(item[0], len(frequency_order)),
+        ):
+            for granularity in source_config["granularities"]:
+                rows.append(
+                    {
+                        "strategy": strategy,
+                        "title": strategy_config["title"],
+                        "data_type": granularity,
+                        "frequency": frequency,
+                        "dataset": source_config["dataset"],
+                    }
+                )
+
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "strategy",
+            "title",
+            "data_type",
+            "frequency",
+            "dataset",
+        ],
+    )
+
+
 def _load_french_dataset(dataset, start_date=None, end_date=None):
     """Load a dataset from the Kenneth French Data Library."""
     # pandas-datareader otherwise defaults to only five years of history.

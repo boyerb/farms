@@ -102,6 +102,48 @@ def test_decile_registry_contains_all_supported_strategies():
     assert "daily" not in french._DECILE_DATASETS["accruals"]["frequencies"]
 
 
+def test_list_ken_french_data_reports_registered_strategy_sources():
+    """The discovery helper should list sources without downloading data."""
+    result = french.list_ken_french_data()
+
+    assert list(result.columns) == [
+        "strategy",
+        "title",
+        "data_type",
+        "frequency",
+        "dataset",
+    ]
+
+    size_rows = result[result["strategy"] == "size"].to_dict("records")
+    assert size_rows == [
+        {
+            "strategy": "size",
+            "title": "Size",
+            "data_type": "deciles",
+            "frequency": "monthly",
+            "dataset": "Portfolios_Formed_on_ME",
+        },
+        {
+            "strategy": "size",
+            "title": "Size",
+            "data_type": "quintiles",
+            "frequency": "monthly",
+            "dataset": "Portfolios_Formed_on_ME",
+        },
+        {
+            "strategy": "size",
+            "title": "Size",
+            "data_type": "deciles",
+            "frequency": "daily",
+            "dataset": "Portfolios_Formed_on_ME_Daily",
+        },
+    ]
+
+    momentum_rows = result[result["strategy"] == "momentum"]
+    assert set(momentum_rows["frequency"]) == {"monthly", "daily"}
+    assert set(momentum_rows["data_type"]) == {"deciles"}
+
+
 def test_inspect_french_dataset_summarizes_dataframes(monkeypatch):
     """Dataset inspection should describe every returned DataFrame table."""
     monthly = pd.DataFrame(
