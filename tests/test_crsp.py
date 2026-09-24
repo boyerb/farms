@@ -1,6 +1,7 @@
 import pandas as pd
 import pytest
 
+import farms
 from farms.pipelines import crsp
 
 
@@ -80,7 +81,7 @@ def test_permno_query_is_parameterized_and_returns_monthly_period_index(monkeypa
         ],
     )
 
-    result = crsp.get_crsp_msf_by_ids(
+    result = crsp.load_crsp_data(
         _Database(),
         [14593, 12079],
         "2020-01",
@@ -93,13 +94,14 @@ def test_permno_query_is_parameterized_and_returns_monthly_period_index(monkeypa
     assert call["connection"] is _Database.connection
     assert call["params"] is not None
     assert {14593, 12079}.issubset(set(_values(call["params"])))
-    assert {"2020-01-01", "2020-02-29"}.issubset(
+    assert {"2020-01-01", "2020-03-01"}.issubset(
         _parameter_dates(call["params"])
     )
     assert "14593" not in call["sql"]
     assert "12079" not in call["sql"]
     assert "a.date >= b.namedt" in call["sql"]
     assert "a.date <= b.nameendt" in call["sql"]
+    assert "a.date < %s" in call["sql"]
 
     assert list(result.columns) == _RESULT_COLUMNS
     assert isinstance(result.index, pd.PeriodIndex)
@@ -117,7 +119,7 @@ def test_ticker_query_normalizes_tickers_and_keeps_values_out_of_sql(monkeypatch
         [_source_frame([{"date": "2020-01-31", "permno": 14593, "ticker": "AAPL"}])],
     )
 
-    crsp.get_crsp_msf_by_ids(
+    crsp.load_crsp_data(
         _Database(), [" aapl "], "2020-01", "2020-01", identifier_type="ticker"
     )
 
@@ -126,13 +128,27 @@ def test_ticker_query_normalizes_tickers_and_keeps_values_out_of_sql(monkeypatch
     assert "AAPL" not in calls[0]["sql"]
 
 
+def test_scalar_identifier_is_rejected():
+    with pytest.raises(ValueError, match="one-element list"):
+        crsp.load_crsp_data(
+            _Database(), "AAPL", "2020-01", "2020-01", identifier_type="ticker"
+        )
+
+
+def test_loader_name_and_legacy_alias_are_public():
+    assert crsp.get_crsp_msf_by_ids is crsp.load_crsp_data
+    assert farms.load_crsp_data is crsp.load_crsp_data
+    assert farms.get_crsp_msf_by_ids is crsp.load_crsp_data
+    assert farms.load_all_crsp_data is crsp.load_all_crsp_data
+
+
 @pytest.mark.parametrize(
     "identifiers, identifier_type",
     [([14593, "AAPL"], None), (["AAPL", ""], "ticker"), ([14593, True], "permno")],
 )
 def test_invalid_or_mixed_identifiers_are_rejected(identifiers, identifier_type):
     with pytest.raises(ValueError):
-        crsp.get_crsp_msf_by_ids(
+        crsp.load_crsp_data(
             _Database(), identifiers, "2020-01", "2020-02", identifier_type=identifier_type
         )
 
@@ -143,7 +159,7 @@ def test_invalid_or_mixed_identifiers_are_rejected(identifiers, identifier_type)
 )
 def test_dates_must_be_ordered_months(start_date, end_date):
     with pytest.raises(ValueError):
-        crsp.get_crsp_msf_by_ids(
+        crsp.load_crsp_data(
             _Database(), [14593], start_date, end_date, identifier_type="permno"
         )
 
@@ -151,7 +167,7 @@ def test_dates_must_be_ordered_months(start_date, end_date):
 @pytest.mark.parametrize("chunk_size", [0, -1, 1.5, True])
 def test_chunk_size_must_be_a_positive_integer(chunk_size):
     with pytest.raises(ValueError):
-        crsp.get_crsp_msf_by_ids(
+        crsp.load_crsp_data(
             _Database(), [14593], "2020-01", "2020-02", chunk_size=chunk_size,
             identifier_type="permno",
         )
@@ -166,7 +182,7 @@ def test_large_identifier_list_is_deduplicated_and_chunked(monkeypatch):
         ],
     )
 
-    result = crsp.get_crsp_msf_by_ids(
+    result = crsp.load_crsp_data(
         _Database(), [1, 2, 3, 1], "2020-01", "2020-01", chunk_size=2,
         identifier_type="permno",
     )
@@ -179,7 +195,7 @@ def test_large_identifier_list_is_deduplicated_and_chunked(monkeypatch):
 def test_empty_result_has_the_same_public_schema(monkeypatch):
     _capture_queries(monkeypatch, [_source_frame([])])
 
-    result = crsp.get_crsp_msf_by_ids(
+    result = crsp.load_crsp_data(
         _Database(), [14593], "2020-01", "2020-01", identifier_type="permno"
     )
 
@@ -188,3 +204,96 @@ def test_empty_result_has_the_same_public_schema(monkeypatch):
     assert result.index.name == "date"
     assert result.index.freqstr == "M"
     assert result.empty
+    assert str(result["permno"].dtype) == "Int64"
+    assert str(result["ticker"].dtype) == "string"
+
+
+def test_duplicate_date_permno_rows_are_rejected(monkeypatch):
+    _capture_queries(
+        monkeypatch,
+        [
+            _source_frame(
+                [
+                    {"date": "2020-01-31", "permno": 14593},
+                    {"date": "2020-01-31", "permno": 14593},
+                ]
+            )
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="multiple rows"):
+        crsp.load_crsp_data(
+            _Database(), [14593], "2020-01", "2020-01", identifier_type="permno"
+        )
+
+
+def test_load_all_monthly_data_screens_on_prior_month_observations(monkeypatch):
+    calls = _capture_queries(
+        monkeypatch,
+        [_source_frame([{"date": "2009-03-31", "permno": 14593}])],
+    )
+
+    result = crsp.load_all_crsp_data(
+        _Database(),
+        "2009-03",
+        "2009-03",
+        share_codes=(10, 11),
+        market_cap_min=1_000_000,
+        market_cap_max=2_000_000_000,
+        price_min=5,
+        price_max=500,
+    )
+
+    sql = calls[0]["sql"]
+    params = calls[0]["params"]
+    assert "FROM crspm.msf a" in sql
+    assert "crspm.msenames" in sql
+    assert "p.date = (a.date - INTERVAL '1 month')::date" in sql
+    assert "a.permno IN" not in sql
+    assert "ABS(screen.screen_prc) * screen.screen_shrout * 1000 > %s" in sql
+    assert "ABS(screen.screen_prc) * screen.screen_shrout * 1000 < %s" in sql
+    assert "ABS(screen.screen_prc) > %s" in sql
+    assert "ABS(screen.screen_prc) < %s" in sql
+    assert {"2009-03-01", "2009-04-01"}.issubset(_parameter_dates(params))
+    assert {10, 11, 1_000_000.0, 2_000_000_000.0, 5.0, 500.0}.issubset(
+        set(_values(params))
+    )
+    assert isinstance(result.index, pd.PeriodIndex)
+    assert list(result.index) == [pd.Period("2009-03", freq="M")]
+
+
+def test_load_all_daily_data_returns_datetime_index(monkeypatch):
+    calls = _capture_queries(
+        monkeypatch,
+        [_source_frame([{"date": "2009-03-03", "permno": 14593}])],
+    )
+
+    result = crsp.load_all_crsp_data(
+        _Database(), "2009-03-03", "2009-03-03", frequency="daily"
+    )
+
+    sql = calls[0]["sql"]
+    assert "FROM crsp.dsf a" in sql
+    assert "crsp.dsenames" in sql
+    assert "LATERAL" not in sql
+    assert {"2009-03-03", "2009-03-04"}.issubset(
+        _parameter_dates(calls[0]["params"])
+    )
+    assert isinstance(result.index, pd.DatetimeIndex)
+    assert result.index[0] == pd.Timestamp("2009-03-03")
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"frequency": "weekly"},
+        {"price_min": 10, "price_max": 10},
+        {"market_cap_min": -1},
+        {"share_codes": []},
+    ],
+)
+def test_load_all_rejects_invalid_screen_arguments(kwargs):
+    with pytest.raises(ValueError):
+        crsp.load_all_crsp_data(
+            _Database(), "2020-01", "2020-02", **kwargs
+        )

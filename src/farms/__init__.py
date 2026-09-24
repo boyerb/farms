@@ -1,5 +1,9 @@
 from .pipelines.alpha_vantage import format_alpha_vantage
-from .pipelines.crsp import get_crsp_msf_by_ids
+from .pipelines.crsp import (
+    get_crsp_msf_by_ids,
+    load_all_crsp_data,
+    load_crsp_data,
+)
 from .pipelines.Ken_French_library import (
     get_ff3,
     get_ff5,
@@ -34,6 +38,8 @@ __version__ = version("farms")
 __all__ = [
     "format_alpha_vantage",
     "get_crsp_msf_by_ids",
+    "load_all_crsp_data",
+    "load_crsp_data",
     "get_ff3",
     "get_ff3d",
     "get_ff5",

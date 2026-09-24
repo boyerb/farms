@@ -8,6 +8,7 @@ Fama-French factors and portfolio returns from the
 ## Installation
 
 `farms` requires Python 3.11 or newer.
+It supports Pandas 2.2 through the Pandas 3.x release series.
 
 ```bash
 python -m pip install farms
@@ -81,10 +82,13 @@ print(monthly.head())
 
 ## CRSP monthly stock data (WRDS)
 
-`get_crsp_msf_by_ids` loads CRSP Monthly Stock File observations through a
+`load_crsp_data` loads CRSP Monthly Stock File observations through a
 caller-provided [WRDS](https://wrds-www.wharton.upenn.edu/) connection. You
 need a WRDS account with access to the CRSP data set. `wrds` is intentionally
 not installed as a required `farms` dependency, so install it separately:
+
+The previous `get_crsp_msf_by_ids` name remains available as a compatibility
+alias.
 
 ```bash
 python -m pip install wrds
@@ -95,7 +99,7 @@ python -m pip install wrds
 | Parameter | Required | Format and behavior |
 | --- | --- | --- |
 | `db` | Yes | An open `wrds.Connection` or compatible database wrapper. |
-| `identifiers` | Yes | A list of PERMNOs or ticker strings. |
+| `identifiers` | Yes | An iterable of PERMNOs or ticker strings; pass a single identifier as a one-element list. |
 | `start_date` | Yes | `YYYY-MM`; `None` is not supported. |
 | `end_date` | Yes | `YYYY-MM`; `None` is not supported. The range is inclusive. |
 | `identifier_type` | No | `"permno"` or `"ticker"`. Providing it is recommended to avoid ambiguity. |
@@ -110,6 +114,8 @@ January through March 2020.
 Returns a DataFrame with a monthly `PeriodIndex` named `date`, sorted
 chronologically. Columns include PERMNO, PERMCO, ticker, company/name-history
 fields, and CRSP price, return, volume, and shares-outstanding fields.
+Ticker lookups use the historical CRSP name records, so a reused ticker may
+return multiple PERMNOs over the requested date range.
 `ret` and `retx` are decimal returns (`0.01` means 1%). `prc` follows the
 CRSP price sign convention, `vol` is trading volume, and `shrout` is reported
 by CRSP in thousands of shares.
@@ -123,7 +129,7 @@ import farms
 import wrds
 
 db = wrds.Connection()
-monthly = farms.get_crsp_msf_by_ids(
+monthly = farms.load_crsp_data(
     db,
     identifiers=[14593, 12079],
     start_date="2020-01",
@@ -135,7 +141,7 @@ monthly = farms.get_crsp_msf_by_ids(
 Or query by ticker:
 
 ```python
-monthly = farms.get_crsp_msf_by_ids(
+monthly = farms.load_crsp_data(
     db,
     identifiers=["AAPL", "MSFT"],
     start_date="2020-01",
@@ -144,6 +150,40 @@ monthly = farms.get_crsp_msf_by_ids(
 )
 db.close()
 ```
+
+## All-security CRSP loader
+
+`load_all_crsp_data` loads every CRSP security in a bounded monthly or daily
+date range. Optional `share_codes`, market-cap, and price screens are applied
+using information observable at the beginning of each return period. For
+monthly data, March 2009 observations use February 2009 month-end values. For
+daily data, observations use the most recent prior CRSP trading observation.
+
+```python
+monthly = farms.load_all_crsp_data(
+    db,
+    start_date="2009-03",
+    end_date="2009-12",
+    share_codes=(10, 11),
+    market_cap_min=100_000_000,
+    price_min=5,
+)
+
+daily = farms.load_all_crsp_data(
+    db,
+    start_date="2009-03-01",
+    end_date="2009-03-31",
+    frequency="daily",
+    share_codes=(10, 11),
+    price_min=5,
+    price_max=500,
+)
+```
+
+Market capitalization is calculated as `abs(prc) * shrout * 1000`, since CRSP
+reports `shrout` in thousands. Price and market-cap bounds are strict; use
+only the lower bound for `> x`, only the upper bound for `< x`, or both for a
+range.
 
 ## Unified Kenneth French loader
 
