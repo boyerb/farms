@@ -473,7 +473,10 @@ def load_all_crsp_data(
     if frequency == "monthly":
         data_table = "crspm.msf"
         names_table = "crspm.msenames"
-        prior_date_condition = "AND p.date = (a.date - INTERVAL '1 month')::date"
+        prior_date_condition = """
+            AND p.date >= date_trunc('month', a.date - INTERVAL '1 month')::date
+            AND p.date < date_trunc('month', a.date)::date
+        """
     else:
         data_table = "crsp.dsf"
         names_table = "crsp.dsenames"

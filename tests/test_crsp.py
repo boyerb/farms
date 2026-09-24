@@ -408,7 +408,8 @@ def test_load_all_monthly_data_screens_on_prior_month_observations(monkeypatch):
     params = calls[0]["params"]
     assert "FROM crspm.msf a" in sql
     assert "crspm.msenames" in sql
-    assert "p.date = (a.date - INTERVAL '1 month')::date" in sql
+    assert "p.date >= date_trunc('month', a.date - INTERVAL '1 month')::date" in sql
+    assert "p.date < date_trunc('month', a.date)::date" in sql
     assert "a.permno IN" not in sql
     assert "ABS(screen.screen_prc) * screen.screen_shrout * 1000 > %s" in sql
     assert "ABS(screen.screen_prc) * screen.screen_shrout * 1000 < %s" in sql
