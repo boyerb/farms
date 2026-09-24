@@ -408,6 +408,8 @@ def test_load_all_monthly_data_screens_on_prior_month_observations(monkeypatch):
     params = calls[0]["params"]
     assert "FROM crspm.msf a" in sql
     assert "crspm.msenames" in sql
+    assert "FROM (\n                    SELECT DISTINCT ON (p.permno)" in sql
+    assert "ORDER BY p.permno, p.date DESC, pb.nameendt DESC NULLS LAST" in sql
     assert "date_trunc('month', prior_date) = date_trunc('month', date - INTERVAL '1 month')" in sql
     assert "LAG(screen_prc) OVER security_window AS prior_prc" in sql
     assert "LAG(screen_shrout) OVER security_window AS prior_shrout" in sql

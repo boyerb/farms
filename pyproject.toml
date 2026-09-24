@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "farms"
-version = "0.1.29"
+version = "0.1.30"
 description = "Financial Analysis & Risk Management: A Python toolkit for loading financial data and performing regression and portfolio analysis for teaching and research."
 readme = "README.md"
 requires-python = ">=3.11"

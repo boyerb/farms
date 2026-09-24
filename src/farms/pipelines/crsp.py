@@ -554,9 +554,9 @@ def load_all_crsp_data(
 
                 UNION ALL
 
-                SELECT DISTINCT ON (p.permno)
-                    p.date,
-                    p.permno,
+                SELECT
+                    prior.date,
+                    prior.permno,
                     NULL,
                     NULL,
                     NULL,
@@ -568,16 +568,25 @@ def load_all_crsp_data(
                     NULL,
                     NULL,
                     NULL,
-                    p.prc,
-                    p.shrout,
-                    pb.shrcd
-                FROM {data_table} p
-                LEFT JOIN {names_table} pb
-                    ON p.permno = pb.permno
-                   AND p.date >= pb.namedt
-                   AND p.date <= pb.nameendt
-                WHERE p.date < %s
-                ORDER BY p.permno, p.date DESC, pb.nameendt DESC NULLS LAST
+                    prior.prc,
+                    prior.shrout,
+                    prior.shrcd
+                FROM (
+                    SELECT DISTINCT ON (p.permno)
+                        p.date,
+                        p.permno,
+                        p.prc,
+                        p.shrout,
+                        pb.shrcd,
+                        pb.nameendt
+                    FROM {data_table} p
+                    LEFT JOIN {names_table} pb
+                        ON p.permno = pb.permno
+                       AND p.date >= pb.namedt
+                       AND p.date <= pb.nameendt
+                    WHERE p.date < %s
+                    ORDER BY p.permno, p.date DESC, pb.nameendt DESC NULLS LAST
+                ) prior
             ),
             with_prior AS (
                 SELECT
