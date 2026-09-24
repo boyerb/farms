@@ -473,14 +473,9 @@ def load_all_crsp_data(
     if frequency == "monthly":
         data_table = "crspm.msf"
         names_table = "crspm.msenames"
-        prior_date_condition = """
-            AND p.date >= date_trunc('month', a.date - INTERVAL '1 month')::date
-            AND p.date < date_trunc('month', a.date)::date
-        """
     else:
         data_table = "crsp.dsf"
         names_table = "crsp.dsenames"
-        prior_date_condition = ""
 
     screen_values = (
         share_codes is not None
@@ -489,78 +484,158 @@ def load_all_crsp_data(
         or price_min is not None
         or price_max is not None
     )
-    screen_join = ""
     screen_filters = []
-    params: list[object] = [start, end_exclusive]
+    params: list[object]
 
     if screen_values:
-        screen_join = f"""
-        LEFT JOIN LATERAL (
-            SELECT
-                p.date AS screen_date,
-                p.prc AS screen_prc,
-                p.shrout AS screen_shrout,
-                pb.shrcd AS screen_shrcd
-            FROM {data_table} p
-            LEFT JOIN {names_table} pb
-                ON p.permno = pb.permno
-               AND p.date >= pb.namedt
-               AND p.date <= pb.nameendt
-            WHERE p.permno = a.permno
-              AND p.date < a.date
-              {prior_date_condition}
-            ORDER BY p.date DESC, pb.nameendt DESC NULLS LAST
-            LIMIT 1
-        ) screen ON TRUE
-        """
-        screen_filters.append("screen.screen_date IS NOT NULL")
+        # Add one prior observation per security, then use window functions
+        # instead of running a correlated lookup for every security-period row.
+        screen_filters.append("prior_date IS NOT NULL")
+        if frequency == "monthly":
+            screen_filters.append(
+                "date_trunc('month', prior_date) = "
+                "date_trunc('month', date - INTERVAL '1 month')"
+            )
 
         if share_codes is not None:
             placeholders = ", ".join(["%s"] * len(share_codes))
-            screen_filters.append(f"screen.screen_shrcd IN ({placeholders})")
-            params.extend(share_codes)
+            screen_filters.append(f"prior_shrcd IN ({placeholders})")
 
         if market_cap_min is not None:
             screen_filters.append(
-                "ABS(screen.screen_prc) * screen.screen_shrout * 1000 > %s"
+                "ABS(prior_prc) * prior_shrout * 1000 > %s"
             )
-            params.append(market_cap_min)
         if market_cap_max is not None:
             screen_filters.append(
-                "ABS(screen.screen_prc) * screen.screen_shrout * 1000 < %s"
+                "ABS(prior_prc) * prior_shrout * 1000 < %s"
             )
-            params.append(market_cap_max)
         if price_min is not None:
-            screen_filters.append("ABS(screen.screen_prc) > %s")
-            params.append(price_min)
+            screen_filters.append("ABS(prior_prc) > %s")
         if price_max is not None:
-            screen_filters.append("ABS(screen.screen_prc) < %s")
-            params.append(price_max)
+            screen_filters.append("ABS(prior_prc) < %s")
 
-    where_filters = ["a.date >= %s", "a.date < %s", *screen_filters]
-    sql = f"""
-        SELECT
-            a.date,
-            a.permno,
-            a.permco,
-            b.ticker,
-            b.comnam,
-            b.shrcd,
-            b.exchcd,
-            b.siccd,
-            a.prc,
-            a.ret,
-            a.retx,
-            a.vol,
-            a.shrout
-        FROM {data_table} a
-        INNER JOIN {names_table} b
-            ON a.permno = b.permno
-           AND a.date >= b.namedt
-           AND a.date <= b.nameendt
-        {screen_join}
-        WHERE {' AND '.join(where_filters)}
-    """
+        params = [start, end_exclusive, start, start, end_exclusive]
+        params.extend(share_codes or [])
+        for bound in (
+            market_cap_min,
+            market_cap_max,
+            price_min,
+            price_max,
+        ):
+            if bound is not None:
+                params.append(bound)
+
+        sql = f"""
+            WITH period_rows AS (
+                SELECT
+                    a.date,
+                    a.permno,
+                    a.permco,
+                    b.ticker,
+                    b.comnam,
+                    b.shrcd,
+                    b.exchcd,
+                    b.siccd,
+                    a.prc,
+                    a.ret,
+                    a.retx,
+                    a.vol,
+                    a.shrout,
+                    a.prc AS screen_prc,
+                    a.shrout AS screen_shrout,
+                    b.shrcd AS screen_shrcd
+                FROM {data_table} a
+                INNER JOIN {names_table} b
+                    ON a.permno = b.permno
+                   AND a.date >= b.namedt
+                   AND a.date <= b.nameendt
+                WHERE a.date >= %s
+                  AND a.date < %s
+
+                UNION ALL
+
+                SELECT DISTINCT ON (p.permno)
+                    p.date,
+                    p.permno,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    p.prc,
+                    p.shrout,
+                    pb.shrcd
+                FROM {data_table} p
+                LEFT JOIN {names_table} pb
+                    ON p.permno = pb.permno
+                   AND p.date >= pb.namedt
+                   AND p.date <= pb.nameendt
+                WHERE p.date < %s
+                ORDER BY p.permno, p.date DESC, pb.nameendt DESC NULLS LAST
+            ),
+            with_prior AS (
+                SELECT
+                    period_rows.*,
+                    LAG(date) OVER security_window AS prior_date,
+                    LAG(screen_prc) OVER security_window AS prior_prc,
+                    LAG(screen_shrout) OVER security_window AS prior_shrout,
+                    LAG(screen_shrcd) OVER security_window AS prior_shrcd
+                FROM period_rows
+                WINDOW security_window AS (
+                    PARTITION BY permno
+                    ORDER BY date
+                )
+            )
+            SELECT
+                date,
+                permno,
+                permco,
+                ticker,
+                comnam,
+                shrcd,
+                exchcd,
+                siccd,
+                prc,
+                ret,
+                retx,
+                vol,
+                shrout
+            FROM with_prior
+            WHERE date >= %s
+              AND date < %s
+              AND {' AND '.join(screen_filters)}
+        """
+    else:
+        params = [start, end_exclusive]
+        sql = f"""
+            SELECT
+                a.date,
+                a.permno,
+                a.permco,
+                b.ticker,
+                b.comnam,
+                b.shrcd,
+                b.exchcd,
+                b.siccd,
+                a.prc,
+                a.ret,
+                a.retx,
+                a.vol,
+                a.shrout
+            FROM {data_table} a
+            INNER JOIN {names_table} b
+                ON a.permno = b.permno
+               AND a.date >= b.namedt
+               AND a.date <= b.nameendt
+            WHERE a.date >= %s
+              AND a.date < %s
+        """
 
     out = pd.read_sql_query(sql, con, params=params)
     if out.empty:

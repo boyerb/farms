@@ -408,13 +408,15 @@ def test_load_all_monthly_data_screens_on_prior_month_observations(monkeypatch):
     params = calls[0]["params"]
     assert "FROM crspm.msf a" in sql
     assert "crspm.msenames" in sql
-    assert "p.date >= date_trunc('month', a.date - INTERVAL '1 month')::date" in sql
-    assert "p.date < date_trunc('month', a.date)::date" in sql
+    assert "date_trunc('month', prior_date) = date_trunc('month', date - INTERVAL '1 month')" in sql
+    assert "LAG(screen_prc) OVER security_window AS prior_prc" in sql
+    assert "LAG(screen_shrout) OVER security_window AS prior_shrout" in sql
+    assert "LAG(screen_shrcd) OVER security_window AS prior_shrcd" in sql
     assert "a.permno IN" not in sql
-    assert "ABS(screen.screen_prc) * screen.screen_shrout * 1000 > %s" in sql
-    assert "ABS(screen.screen_prc) * screen.screen_shrout * 1000 < %s" in sql
-    assert "ABS(screen.screen_prc) > %s" in sql
-    assert "ABS(screen.screen_prc) < %s" in sql
+    assert "ABS(prior_prc) * prior_shrout * 1000 > %s" in sql
+    assert "ABS(prior_prc) * prior_shrout * 1000 < %s" in sql
+    assert "ABS(prior_prc) > %s" in sql
+    assert "ABS(prior_prc) < %s" in sql
     assert {"2009-03-01", "2009-04-01"}.issubset(_parameter_dates(params))
     assert {10, 11, 1_000_000.0, 2_000_000_000.0, 5.0, 500.0}.issubset(
         set(_values(params))
