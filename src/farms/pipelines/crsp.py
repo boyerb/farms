@@ -5,6 +5,8 @@ from typing import Iterable, List, Literal, Union
 
 import pandas as pd
 
+from .Ken_French_library import load_ken_french_data
+
 
 _RESULT_COLUMNS = [
     "permno",
@@ -36,6 +38,68 @@ _EMPTY_RESULT_DTYPES = {
     "shrout": "Float64",
 }
 
+_CRSP_FACTOR_COLUMNS = {
+    "Mkt-RF": "ff_mkt_rf",
+    "SMB": "ff_smb",
+    "HML": "ff_hml",
+    "RMW": "ff_rmw",
+    "CMA": "ff_cma",
+    "RF": "ff_rf",
+}
+
+
+def _merge_crsp_factors(
+    data: pd.DataFrame,
+    start_date: str,
+    end_date: str,
+    frequency: Literal["monthly", "daily"],
+    include_factors: Literal["none", "market", "ff3", "ff5"] | None,
+) -> pd.DataFrame:
+    """Merge requested decimal Fama-French returns onto CRSP observations."""
+    if include_factors is None:
+        return data
+
+    selection = str(include_factors).lower()
+    if selection == "none":
+        return data
+    if selection not in {"market", "ff3", "ff5"}:
+        raise ValueError(
+            "include_factors must be None, 'none', 'market', 'ff3', or 'ff5'."
+        )
+
+    model = "ff3" if selection == "market" else selection
+    factor_data = load_ken_french_data(
+        model,
+        frequency=frequency,
+        start_date=start_date,
+        end_date=end_date,
+    ).rename(columns=_CRSP_FACTOR_COLUMNS)
+
+    if selection == "market":
+        factor_columns = ["ff_mkt_rf", "ff_rf"]
+    elif selection == "ff3":
+        factor_columns = ["ff_mkt_rf", "ff_smb", "ff_hml", "ff_rf"]
+    else:
+        factor_columns = [
+            "ff_mkt_rf",
+            "ff_smb",
+            "ff_hml",
+            "ff_rmw",
+            "ff_cma",
+            "ff_rf",
+        ]
+
+    missing_columns = [
+        column for column in factor_columns if column not in factor_data.columns
+    ]
+    if missing_columns:
+        raise ValueError(
+            "Ken French factor data is missing required columns: "
+            + ", ".join(missing_columns)
+        )
+
+    return data.join(factor_data[factor_columns], how="left")
+
 
 def load_crsp_data(
     db,
@@ -44,10 +108,12 @@ def load_crsp_data(
     end_date: str,
     chunk_size: int = 500,
     identifier_type: Literal["permno", "ticker"] | None = None,
+    frequency: Literal["monthly", "daily"] = "monthly",
+    include_factors: Literal["none", "market", "ff3", "ff5"] | None = None,
 ) -> pd.DataFrame:
 
     """
-    Pull CRSP Monthly Stock File (msf) data for either a list of TICKERS or PERMNOs.
+    Pull CRSP monthly or daily stock-file data for TICKERS or PERMNOs.
 
     Parameters
     ----------
@@ -58,18 +124,29 @@ def load_crsp_data(
     identifier_type : {'permno', 'ticker'}, optional
         Explicitly select how to interpret ``identifiers``. When omitted, the
         type is inferred only from a homogeneous list of integers or strings.
-    start_date, end_date : 'YYYY-MM'
-        Required, inclusive calendar-month range to filter `a.date`.
+    start_date, end_date : str
+        Required, inclusive date range to filter `a.date`. Use ``YYYY-MM``
+        for monthly data or ``YYYY-MM-DD`` for daily data.
     chunk_size : int
         Max identifiers per SQL IN() chunk to avoid overly long queries.
+    frequency : {'monthly', 'daily'}
+        Select CRSP Monthly Stock File (``crspm.msf``) or Daily Stock File
+        (``crsp.dsf``). Defaults to ``"monthly"``.
+    include_factors : {None, 'none', 'market', 'ff3', 'ff5'}, optional
+        Merge Ken French decimal returns at the matching frequency. ``'market'``
+        adds ``ff_mkt_rf`` and ``ff_rf``; ``'ff3'`` adds those plus ``ff_smb``
+        and ``ff_hml``; ``'ff5'`` adds ``ff_rmw`` and ``ff_cma`` as well.
+        ``None`` and ``'none'`` leave the CRSP data unchanged.
 
     Returns
     -------
     pandas.DataFrame
-        A chronologically sorted monthly PeriodIndex named ``date`` and columns:
+        A chronologically sorted date index named ``date`` and columns:
         permno, permco, ticker, comnam, shrcd, exchcd, siccd, prc, ret, retx,
-        vol, shrout. Ticker lookups use historical CRSP name records and may
-        return multiple PERMNOs when a ticker was reused over time.
+        vol, shrout, and any requested prefixed Ken French factor columns.
+        Monthly results use a PeriodIndex; daily results use a DatetimeIndex.
+        Ticker lookups use historical CRSP name records and may return multiple
+        PERMNOs when a ticker was reused over time.
     """
     
     # Establish the connection object
@@ -84,24 +161,37 @@ def load_crsp_data(
     ):
         raise ValueError("chunk_size must be a positive integer.")
 
-    # CRSP msf is monthly data, so use an unambiguous month-only API.
+    if frequency not in {"monthly", "daily"}:
+        raise ValueError("frequency must be either 'monthly' or 'daily'.")
+
+    date_pattern = r"\d{4}-\d{2}" if frequency == "monthly" else r"\d{4}-\d{2}-\d{2}"
+    expected_date_format = "YYYY-MM" if frequency == "monthly" else "YYYY-MM-DD"
     if not all(
-        isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}", value)
+        isinstance(value, str) and re.fullmatch(date_pattern, value)
         for value in (start_date, end_date)
     ):
-        raise ValueError("start_date and end_date must be in 'YYYY-MM' format.")
+        raise ValueError(f"start_date and end_date must be in '{expected_date_format}' format.")
 
     try:
-        start_period = pd.Period(start_date, freq="M")
-        end_period = pd.Period(end_date, freq="M")
+        if frequency == "monthly":
+            start_period = pd.Period(start_date, freq="M")
+            end_period = pd.Period(end_date, freq="M")
+            if start_period > end_period:
+                raise ValueError("start_date must not be after end_date.")
+            start = start_period.start_time
+            end_exclusive = (end_period + 1).start_time
+        else:
+            start = pd.Timestamp(start_date).normalize()
+            end = pd.Timestamp(end_date).normalize()
+            if start > end:
+                raise ValueError("start_date must not be after end_date.")
+            end_exclusive = end + pd.Timedelta(1, unit="D")
     except ValueError as error:
-        raise ValueError("start_date and end_date must be in 'YYYY-MM' format.") from error
-
-    if start_period > end_period:
-        raise ValueError("start_date must not be after end_date.")
-
-    start = start_period.start_time
-    end_exclusive = (end_period + 1).start_time
+        if str(error) == "start_date must not be after end_date.":
+            raise
+        raise ValueError(
+            f"start_date and end_date must be in '{expected_date_format}' format."
+        ) from error
 
     # Normalize identifiers and auto-detect type
     if isinstance(identifiers, (str, bytes)):
@@ -159,8 +249,15 @@ def load_crsp_data(
     # and duplicate rows when repeated identifiers span multiple chunks.
     ids_list = list(dict.fromkeys(ids_list))
 
-    # Base SELECT/JOIN and date validity join to msenames
-    base_sql = """
+    if frequency == "monthly":
+        data_table = "crspm.msf"
+        names_table = "crspm.msenames"
+    else:
+        data_table = "crsp.dsf"
+        names_table = "crsp.dsenames"
+
+    # Base SELECT/JOIN and date validity join to the corresponding names table.
+    base_sql = f"""
         SELECT 
             a.date, 
             a.permno,
@@ -175,8 +272,8 @@ def load_crsp_data(
             a.retx, 
             a.vol, 
             a.shrout
-        FROM crspm.msf a
-        INNER JOIN crspm.msenames b
+        FROM {data_table} a
+        INNER JOIN {names_table} b
             ON a.permno = b.permno
         WHERE a.date >= b.namedt 
           AND a.date <= b.nameendt
@@ -210,8 +307,13 @@ def load_crsp_data(
                 for column, dtype in _EMPTY_RESULT_DTYPES.items()
             }
         )
-        out.index = pd.PeriodIndex([], freq="M", name="date")
-        return out
+        if frequency == "monthly":
+            out.index = pd.PeriodIndex([], freq="M", name="date")
+        else:
+            out.index = pd.DatetimeIndex([], name="date")
+        return _merge_crsp_factors(
+            out, start_date, end_date, frequency, include_factors
+        )
 
     if out.duplicated(subset=["date", "permno"]).any():
         raise RuntimeError(
@@ -220,9 +322,19 @@ def load_crsp_data(
         )
 
     out = out.sort_values(["date", "permno"]).reset_index(drop=True).copy()
-    date_periods = pd.to_datetime(out["date"]).dt.to_period("M")
-    out.index = pd.PeriodIndex(date_periods, freq="M", name="date")
-    return out.drop(columns=["date"])
+    dates = pd.to_datetime(out["date"])
+    if frequency == "monthly":
+        date_periods = dates.dt.to_period("M")
+        out.index = pd.PeriodIndex(date_periods, freq="M", name="date")
+    else:
+        out.index = pd.DatetimeIndex(dates, name="date")
+    return _merge_crsp_factors(
+        out.drop(columns=["date"]),
+        start_date,
+        end_date,
+        frequency,
+        include_factors,
+    )
 
 
 def load_all_crsp_data(
@@ -236,6 +348,7 @@ def load_all_crsp_data(
     market_cap_max: Real | None = None,
     price_min: Real | None = None,
     price_max: Real | None = None,
+    include_factors: Literal["none", "market", "ff3", "ff5"] | None = None,
 ) -> pd.DataFrame:
     """Load CRSP data for all securities in a monthly or daily date range.
 
@@ -253,6 +366,11 @@ def load_all_crsp_data(
     frequency : {'monthly', 'daily'}
         Select CRSP Monthly Stock File (``crspm.msf``) or Daily Stock File
         (``crsp.dsf``).
+    include_factors : {None, 'none', 'market', 'ff3', 'ff5'}, optional
+        Merge Ken French decimal returns at the matching frequency. ``'market'``
+        adds ``ff_mkt_rf`` and ``ff_rf``; ``'ff3'`` adds those plus ``ff_smb``
+        and ``ff_hml``; ``'ff5'`` adds ``ff_rmw`` and ``ff_cma`` as well.
+        ``None`` and ``'none'`` leave the CRSP data unchanged.
     share_codes : iterable of int, optional
         Restrict observations to securities whose share code at the beginning
         of the period is in this collection. Use ``(10, 11)`` for common
@@ -453,7 +571,9 @@ def load_all_crsp_data(
             out.index = pd.PeriodIndex([], freq="M", name="date")
         else:
             out.index = pd.DatetimeIndex([], name="date")
-        return out
+        return _merge_crsp_factors(
+            out, start_date, end_date, frequency, include_factors
+        )
 
     if out.duplicated(subset=["date", "permno"]).any():
         raise RuntimeError(
@@ -467,7 +587,13 @@ def load_all_crsp_data(
         out.index = pd.PeriodIndex(dates.dt.to_period("M"), freq="M", name="date")
     else:
         out.index = pd.DatetimeIndex(dates, name="date")
-    return out.drop(columns=["date"])
+    return _merge_crsp_factors(
+        out.drop(columns=["date"]),
+        start_date,
+        end_date,
+        frequency,
+        include_factors,
+    )
 
 
 # Backward-compatible name retained for existing callers.

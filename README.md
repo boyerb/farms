@@ -80,9 +80,9 @@ monthly = farms.format_alpha_vantage(
 print(monthly.head())
 ```
 
-## CRSP monthly stock data (WRDS)
+## CRSP stock data (WRDS)
 
-`load_crsp_data` loads CRSP Monthly Stock File observations through a
+`load_crsp_data` loads CRSP monthly or daily stock-file observations through a
 caller-provided [WRDS](https://wrds-www.wharton.upenn.edu/) connection. You
 need a WRDS account with access to the CRSP data set. `wrds` is intentionally
 not installed as a required `farms` dependency, so install it separately:
@@ -100,25 +100,34 @@ python -m pip install wrds
 | --- | --- | --- |
 | `db` | Yes | An open `wrds.Connection` or compatible database wrapper. |
 | `identifiers` | Yes | An iterable of PERMNOs or ticker strings; pass a single identifier as a one-element list. |
-| `start_date` | Yes | `YYYY-MM`; `None` is not supported. |
-| `end_date` | Yes | `YYYY-MM`; `None` is not supported. The range is inclusive. |
+| `start_date` | Yes | `YYYY-MM` for monthly or `YYYY-MM-DD` for daily; `None` is not supported. |
+| `end_date` | Yes | `YYYY-MM` for monthly or `YYYY-MM-DD` for daily; `None` is not supported. The range is inclusive. |
 | `identifier_type` | No | `"permno"` or `"ticker"`. Providing it is recommended to avoid ambiguity. |
 | `chunk_size` | No | Positive integer; defaults to `500`. |
+| `frequency` | No | `"monthly"` or `"daily"`; defaults to `"monthly"`. |
+| `include_factors` | No | `None`/`"none"`, `"market"`, `"ff3"`, or `"ff5"`; merges matching-frequency Ken French decimal returns. |
 
-The date range refers to complete calendar months. For example,
-`start_date="2020-01"` and `end_date="2020-03"` returns observations from
-January through March 2020.
+For monthly data, the date range refers to complete calendar months. For
+example, `start_date="2020-01"` and `end_date="2020-03"` returns observations
+from January through March 2020. For daily data, the range is inclusive of the
+specified calendar dates.
 
 ### Output
 
-Returns a DataFrame with a monthly `PeriodIndex` named `date`, sorted
-chronologically. Columns include PERMNO, PERMCO, ticker, company/name-history
-fields, and CRSP price, return, volume, and shares-outstanding fields.
+Returns a DataFrame with a chronologically sorted `date` index. Monthly results
+use a `PeriodIndex`; daily results use a `DatetimeIndex`. Columns include
+PERMNO, PERMCO, ticker, company/name-history fields, and CRSP price, return,
+volume, and shares-outstanding fields.
 Ticker lookups use the historical CRSP name records, so a reused ticker may
 return multiple PERMNOs over the requested date range.
 `ret` and `retx` are decimal returns (`0.01` means 1%). `prc` follows the
 CRSP price sign convention, `vol` is trading volume, and `shrout` is reported
 by CRSP in thousands of shares.
+
+When requested, factor columns use the non-conflicting names `ff_mkt_rf`,
+`ff_smb`, `ff_hml`, `ff_rmw`, `ff_cma`, and `ff_rf`. The `market` option adds
+`ff_mkt_rf` (the Fama-French market excess return) and `ff_rf`; `ff3` adds SMB
+and HML; `ff5` also adds RMW and CMA. All factor values are decimal returns.
 
 ### Examples
 
@@ -158,6 +167,7 @@ date range. Optional `share_codes`, market-cap, and price screens are applied
 using information observable at the beginning of each return period. For
 monthly data, March 2009 observations use February 2009 month-end values. For
 daily data, observations use the most recent prior CRSP trading observation.
+It accepts the same `include_factors` options described above.
 
 ```python
 monthly = farms.load_all_crsp_data(
@@ -177,6 +187,19 @@ daily = farms.load_all_crsp_data(
     share_codes=(10, 11),
     price_min=5,
     price_max=500,
+)
+```
+
+Daily data:
+
+```python
+daily = farms.load_crsp_data(
+    db,
+    identifiers=[14593, 12079],
+    start_date="2020-01-02",
+    end_date="2020-01-31",
+    identifier_type="permno",
+    frequency="daily",
 )
 ```
 

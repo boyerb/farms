@@ -35,6 +35,24 @@ def _source_frame(rows):
     return frame[["date", *_RESULT_COLUMNS]]
 
 
+def _factor_frame(frequency="monthly"):
+    if frequency == "monthly":
+        index = pd.PeriodIndex(["2020-01"], freq="M", name="date")
+    else:
+        index = pd.DatetimeIndex(["2020-01-03"], name="date")
+    return pd.DataFrame(
+        {
+            "Mkt-RF": [0.01],
+            "SMB": [0.002],
+            "HML": [-0.003],
+            "RMW": [0.004],
+            "CMA": [-0.005],
+            "RF": [0.0001],
+        },
+        index=index,
+    )
+
+
 def _capture_queries(monkeypatch, frames):
     calls = []
     responses = iter(frames)
@@ -126,6 +144,148 @@ def test_ticker_query_normalizes_tickers_and_keeps_values_out_of_sql(monkeypatch
     assert len(calls) == 1
     assert "AAPL" in set(_values(calls[0]["params"]))
     assert "AAPL" not in calls[0]["sql"]
+
+
+def test_daily_query_uses_daily_tables_and_datetime_index(monkeypatch):
+    calls = _capture_queries(
+        monkeypatch,
+        [_source_frame([{"date": "2020-01-03", "permno": 14593, "ticker": "AAPL"}])],
+    )
+
+    result = crsp.load_crsp_data(
+        _Database(),
+        [14593],
+        "2020-01-02",
+        "2020-01-03",
+        identifier_type="permno",
+        frequency="daily",
+    )
+
+    sql = calls[0]["sql"]
+    assert "FROM crsp.dsf a" in sql
+    assert "crsp.dsenames" in sql
+    assert {"2020-01-02", "2020-01-04"}.issubset(
+        _parameter_dates(calls[0]["params"])
+    )
+    assert isinstance(result.index, pd.DatetimeIndex)
+    assert result.index.name == "date"
+    assert list(result.index) == [pd.Timestamp("2020-01-03")]
+
+
+def test_load_crsp_merges_market_factors_as_decimal_prefixed_columns(monkeypatch):
+    _capture_queries(
+        monkeypatch,
+        [_source_frame([{"date": "2020-01-31", "permno": 14593}])],
+    )
+    factor_calls = []
+
+    def fake_factor_loader(model, **kwargs):
+        factor_calls.append((model, kwargs))
+        return _factor_frame()
+
+    monkeypatch.setattr(crsp, "load_ken_french_data", fake_factor_loader)
+
+    result = crsp.load_crsp_data(
+        _Database(),
+        [14593],
+        "2020-01",
+        "2020-01",
+        identifier_type="permno",
+        include_factors="market",
+    )
+
+    assert factor_calls == [
+        (
+            "ff3",
+            {
+                "frequency": "monthly",
+                "start_date": "2020-01",
+                "end_date": "2020-01",
+            },
+        )
+    ]
+    assert list(result.columns[-2:]) == ["ff_mkt_rf", "ff_rf"]
+    assert result.loc[pd.Period("2020-01", freq="M"), "ff_mkt_rf"] == pytest.approx(0.01)
+    assert result.loc[pd.Period("2020-01", freq="M"), "ff_rf"] == pytest.approx(0.0001)
+    assert "rf" not in result.columns
+    assert "ret" in result.columns
+
+
+def test_load_crsp_merges_daily_ff5_factors(monkeypatch):
+    _capture_queries(
+        monkeypatch,
+        [_source_frame([{"date": "2020-01-03", "permno": 14593}])],
+    )
+    factor_calls = []
+
+    def fake_factor_loader(model, **kwargs):
+        factor_calls.append((model, kwargs))
+        return _factor_frame("daily")
+
+    monkeypatch.setattr(crsp, "load_ken_french_data", fake_factor_loader)
+
+    result = crsp.load_crsp_data(
+        _Database(),
+        [14593],
+        "2020-01-03",
+        "2020-01-03",
+        identifier_type="permno",
+        frequency="daily",
+        include_factors="ff5",
+    )
+
+    assert factor_calls[0][0] == "ff5"
+    assert factor_calls[0][1]["frequency"] == "daily"
+    assert list(result.columns[-6:]) == [
+        "ff_mkt_rf", "ff_smb", "ff_hml", "ff_rmw", "ff_cma", "ff_rf"
+    ]
+    assert result.loc[pd.Timestamp("2020-01-03"), "ff_cma"] == pytest.approx(-0.005)
+
+
+def test_load_all_crsp_merges_ff3_factors(monkeypatch):
+    _capture_queries(
+        monkeypatch,
+        [_source_frame([{"date": "2020-01-31", "permno": 14593}])],
+    )
+    monkeypatch.setattr(
+        crsp,
+        "load_ken_french_data",
+        lambda model, **kwargs: _factor_frame(),
+    )
+
+    result = crsp.load_all_crsp_data(
+        _Database(),
+        "2020-01",
+        "2020-01",
+        include_factors="ff3",
+    )
+
+    assert list(result.columns[-4:]) == [
+        "ff_mkt_rf", "ff_smb", "ff_hml", "ff_rf"
+    ]
+    assert result.loc[pd.Period("2020-01", freq="M"), "ff_hml"] == pytest.approx(-0.003)
+
+
+@pytest.mark.parametrize(
+    "frequency, start_date, end_date, expected",
+    [
+        ("weekly", "2020-01", "2020-02", "frequency"),
+        ("daily", "2020-01", "2020-02", "YYYY-MM-DD"),
+        ("monthly", "2020-01-01", "2020-02-01", "YYYY-MM"),
+    ],
+)
+def test_frequency_and_date_format_are_validated(
+    frequency, start_date, end_date, expected
+):
+    with pytest.raises(ValueError, match=expected):
+        crsp.load_crsp_data(
+            _Database(),
+            [14593],
+            start_date,
+            end_date,
+            identifier_type="permno",
+            frequency=frequency,
+        )
 
 
 def test_scalar_identifier_is_rejected():
