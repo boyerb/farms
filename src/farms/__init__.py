@@ -1,4 +1,10 @@
-from .pipelines.alpha_vantage import format_alpha_vantage
+from .pipelines.alpha_vantage import (
+    AlphaVantageError,
+    AlphaVantageRateLimitError,
+    AlphaVantageResponseError,
+    format_alpha_vantage,
+    load_alpha_vantage_monthly,
+)
 from .pipelines.crsp import (
     get_crsp_msf_by_ids,
     load_all_crsp_data,
@@ -37,6 +43,10 @@ __version__ = version("farms")
 
 __all__ = [
     "format_alpha_vantage",
+    "load_alpha_vantage_monthly",
+    "AlphaVantageError",
+    "AlphaVantageRateLimitError",
+    "AlphaVantageResponseError",
     "get_crsp_msf_by_ids",
     "load_all_crsp_data",
     "load_crsp_data",

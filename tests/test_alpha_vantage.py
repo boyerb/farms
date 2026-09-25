@@ -2,6 +2,10 @@ import pandas as pd
 import pytest
 
 from farms.pipelines import alpha_vantage
+from farms.pipelines.alpha_vantage import (
+    AlphaVantageRateLimitError,
+    AlphaVantageResponseError,
+)
 
 
 _OUTPUT_COLUMNS = [
@@ -16,9 +20,10 @@ _OUTPUT_COLUMNS = [
 
 
 class _Response:
-    def __init__(self, payload=None, error=None):
+    def __init__(self, payload=None, error=None, status_code=200):
         self.payload = payload
         self.error = error
+        self.status_code = status_code
         self.raise_for_status_called = False
 
     def raise_for_status(self):
@@ -35,7 +40,7 @@ class _Response:
 def _month(open_price, dividend="0.0000"):
     return {
         "1. open": open_price,
-        "2. high": "12.0000",
+        "2. high": "22.0000",
         "3. low": "9.0000",
         "4. close": "11.0000",
         "5. adjusted close": "10.5000",
@@ -70,6 +75,7 @@ def test_formats_adjusted_monthly_data_by_explicit_api_field_names():
     ]
     assert result.loc[pd.Period("2020-01", freq="M"), "Open"] == pytest.approx(10.0)
     assert result.loc[pd.Period("2020-02", freq="M"), "Dividend Amount"] == pytest.approx(0.1)
+    assert result.attrs["symbol"] == "TEST"
 
 
 def test_field_mapping_does_not_depend_on_json_field_order():
@@ -150,6 +156,17 @@ def test_surfaces_alpha_vantage_error_payloads(payload, message):
         alpha_vantage.format_alpha_vantage(_Response(payload))
 
 
+def test_uses_specific_response_error_types():
+    with pytest.raises(AlphaVantageRateLimitError):
+        alpha_vantage.format_alpha_vantage(
+            _Response({"Note": "API call frequency limit reached."})
+        )
+    with pytest.raises(AlphaVantageResponseError):
+        alpha_vantage.format_alpha_vantage(
+            _Response({"Error Message": "Invalid API call."})
+        )
+
+
 def test_rejects_payload_with_missing_adjusted_monthly_field():
     payload = _successful_payload()
     del payload["Monthly Adjusted Time Series"]["2020-01-31"]["7. dividend amount"]
@@ -161,3 +178,59 @@ def test_rejects_payload_with_missing_adjusted_monthly_field():
 def test_rejects_malformed_json_response():
     with pytest.raises(ValueError, match="valid JSON"):
         alpha_vantage.format_alpha_vantage(_Response(ValueError("invalid JSON")))
+
+
+def test_rejects_duplicate_months():
+    payload = _successful_payload()
+    payload["Monthly Adjusted Time Series"]["2020-02-15"] = _month("20.0000")
+
+    with pytest.raises(ValueError, match="multiple observations"):
+        alpha_vantage.format_alpha_vantage(_Response(payload))
+
+
+class _Session:
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return next(self.responses)
+
+
+def test_load_alpha_vantage_monthly_fetches_and_formats_response():
+    session = _Session([_Response(_successful_payload())])
+
+    result = alpha_vantage.load_alpha_vantage_monthly(
+        "MSFT", "test-key", start_date="2020-01", end_date="2020-02", session=session
+    )
+
+    assert len(session.calls) == 1
+    url, kwargs = session.calls[0]
+    assert url == "https://www.alphavantage.co/query"
+    assert kwargs["params"] == {
+        "function": "TIME_SERIES_MONTHLY_ADJUSTED",
+        "symbol": "MSFT",
+        "apikey": "test-key",
+    }
+    assert kwargs["timeout"] == 30
+    assert list(result.index) == [
+        pd.Period("2020-01", freq="M"),
+        pd.Period("2020-02", freq="M"),
+    ]
+
+
+def test_load_alpha_vantage_monthly_retries_rate_limit_without_sleep():
+    session = _Session(
+        [
+            _Response({"Note": "API call frequency limit reached."}),
+            _Response(_successful_payload()),
+        ]
+    )
+
+    result = alpha_vantage.load_alpha_vantage_monthly(
+        "MSFT", "test-key", session=session, backoff_factor=0
+    )
+
+    assert len(session.calls) == 2
+    assert not result.empty

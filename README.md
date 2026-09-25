@@ -25,7 +25,9 @@ The data-loading functions require an internet connection when called.
 ## Alpha Vantage monthly adjusted prices
 
 `format_alpha_vantage` formats a response from Alpha Vantage's
-`TIME_SERIES_MONTHLY_ADJUSTED` endpoint. Obtain an API key from
+`TIME_SERIES_MONTHLY_ADJUSTED` endpoint. `load_alpha_vantage_monthly` downloads
+and formats the same data, with timeouts and retries for transient failures.
+Obtain an API key from
 [Alpha Vantage](https://www.alphavantage.co/support/#api-key) before making a
 request.
 
@@ -39,6 +41,13 @@ request.
 
 Invalid, reversed, rate-limited, or malformed API responses raise clear
 exceptions.
+
+For `load_alpha_vantage_monthly`, use `symbol` and `api_key` instead of `r`.
+The optional `timeout`, `max_retries`, and `backoff_factor` parameters control
+network behavior. The loader retries HTTP 429/5xx responses, connection errors,
+and Alpha Vantage rate-limit messages. `AlphaVantageRateLimitError` and
+`AlphaVantageResponseError` are available when callers need to handle those
+conditions separately.
 
 ### Output
 
@@ -60,25 +69,17 @@ All output columns are numeric.
 import os
 
 import farms
-import requests
-
-response = requests.get(
-    "https://www.alphavantage.co/query",
-    params={
-        "function": "TIME_SERIES_MONTHLY_ADJUSTED",
-        "symbol": "MSFT",
-        "apikey": os.environ["ALPHAVANTAGE_API_KEY"],
-    },
-    timeout=30,
-)
-
-monthly = farms.format_alpha_vantage(
-    response,
+monthly = farms.load_alpha_vantage_monthly(
+    symbol="MSFT",
+    api_key=os.environ["ALPHAVANTAGE_API_KEY"],
     start_date="2020-01",
     end_date="2020-12",
 )
 print(monthly.head())
 ```
+
+Use `format_alpha_vantage(response)` directly when the HTTP request is managed
+by the calling application.
 
 ## CRSP stock data (WRDS)
 
