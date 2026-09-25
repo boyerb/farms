@@ -33,6 +33,17 @@ Obtain an API key from
 [Alpha Vantage](https://www.alphavantage.co/support/#api-key) before making a
 request.
 
+For notebooks, `farms.get_alpha_vantage_api_key()` loads the key from Google
+Colab Secrets when running in Colab, or from the local
+`ALPHAVANTAGE_API_KEY` environment variable otherwise. It validates the setup
+without printing the key:
+
+```python
+import farms
+
+api_key = farms.get_alpha_vantage_api_key()
+```
+
 ### Inputs
 
 | Parameter | Required | Format and behavior |

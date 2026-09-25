@@ -1,6 +1,7 @@
 import pandas as pd
 import pytest
 
+import farms
 from farms.pipelines import alpha_vantage
 from farms.pipelines.alpha_vantage import (
     AlphaVantageRateLimitError,
@@ -58,6 +59,20 @@ def _successful_payload():
             "2020-01-31": _month("10.0000"),
         },
     }
+
+
+def test_get_alpha_vantage_api_key_reads_local_environment(monkeypatch):
+    monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "test-key")
+
+    assert alpha_vantage.get_alpha_vantage_api_key() == "test-key"
+    assert farms.get_alpha_vantage_api_key() == "test-key"
+
+
+def test_get_alpha_vantage_api_key_requires_configuration(monkeypatch):
+    monkeypatch.delenv("ALPHAVANTAGE_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="ALPHAVANTAGE_API_KEY"):
+        alpha_vantage.get_alpha_vantage_api_key()
 
 
 def _weekly_payload():
