@@ -39,7 +39,8 @@ from .tools.portfolio_tools import (
     portfolio_volatility,
     tangent_portfolio,
 )
-from .tools.stats_tools import intercept, run_ols, slope
+from .tools.plotting_tools import plot_cumulative_wealth, plot_return_histograms
+from .tools.stats_tools import intercept, run_ols, slope, summary_stats
 
 warnings.filterwarnings(
     "ignore",
@@ -84,7 +85,10 @@ __all__ = [
     "load_ken_french_data",
     "portfolio_sharpe",
     "portfolio_volatility",
+    "plot_cumulative_wealth",
+    "plot_return_histograms",
     "run_ols",
     "slope",
+    "summary_stats",
     "tangent_portfolio"
 ]

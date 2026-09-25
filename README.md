@@ -14,6 +14,8 @@ It supports Pandas 2.2 through the Pandas 3.x release series.
 python -m pip install farms
 ```
 
+The package includes Matplotlib and its plotting helpers.
+
 To work on a local checkout, install it in editable mode:
 
 ```bash
