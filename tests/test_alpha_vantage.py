@@ -7,7 +7,6 @@ from farms.pipelines.alpha_vantage import (
     AlphaVantageResponseError,
 )
 
-
 _OUTPUT_COLUMNS = [
     "Open",
     "High",
@@ -59,6 +58,31 @@ def _successful_payload():
     }
 
 
+def _weekly_payload():
+    return {
+        "Meta Data": {"2. Symbol": "TEST"},
+        "Weekly Adjusted Time Series": {
+            "2020-02-28": _month("20.0000", "0.1000"),
+            "2020-01-31": _month("10.0000"),
+        },
+    }
+
+
+def _daily_payload():
+    def daily_month(open_price, dividend="0.0000"):
+        month = _month(open_price, dividend)
+        month["8. split coefficient"] = "1.0000"
+        return month
+
+    return {
+        "Meta Data": {"2. Symbol": "TEST"},
+        "Time Series (Daily)": {
+            "2020-02-03": daily_month("20.0000", "0.1000"),
+            "2020-02-01": daily_month("10.0000"),
+        },
+    }
+
+
 def test_formats_adjusted_monthly_data_by_explicit_api_field_names():
     response = _Response(_successful_payload())
 
@@ -105,6 +129,34 @@ def test_filters_inclusive_month_range():
     )
 
     assert list(result.index) == [pd.Period("2020-02", freq="M")]
+
+
+def test_formats_weekly_adjusted_data_with_weekly_periods():
+    result = alpha_vantage.format_alpha_vantage_weekly(
+        _Response(_weekly_payload()), "2020-01-01", "2020-02-28"
+    )
+
+    assert isinstance(result.index, pd.PeriodIndex)
+    assert result.index.freqstr == "W-FRI"
+    assert list(result.index) == [
+        pd.Period("2020-01-31", freq="W-FRI"),
+        pd.Period("2020-02-28", freq="W-FRI"),
+    ]
+    assert result.attrs["symbol"] == "TEST"
+
+
+def test_formats_daily_adjusted_data_with_split_coefficient():
+    result = alpha_vantage.format_alpha_vantage_daily(
+        _Response(_daily_payload()), "2020-02-01", "2020-02-02"
+    )
+
+    assert isinstance(result.index, pd.DatetimeIndex)
+    assert result.index.name == "date"
+    assert list(result.index) == [pd.Timestamp("2020-02-01")]
+    assert "Split Coefficient" in result.columns
+    assert result.loc[pd.Timestamp("2020-02-01"), "Split Coefficient"] == pytest.approx(
+        1.0
+    )
 
 
 def test_empty_date_filter_preserves_public_schema():
@@ -234,3 +286,38 @@ def test_load_alpha_vantage_monthly_retries_rate_limit_without_sleep():
 
     assert len(session.calls) == 2
     assert not result.empty
+
+
+def test_load_alpha_vantage_weekly_uses_weekly_endpoint():
+    session = _Session([_Response(_weekly_payload())])
+
+    result = alpha_vantage.load_alpha_vantage_weekly(
+        "MSFT", "test-key", session=session, backoff_factor=0
+    )
+
+    assert session.calls[0][1]["params"]["function"] == "TIME_SERIES_WEEKLY_ADJUSTED"
+    assert isinstance(result.index, pd.PeriodIndex)
+    assert result.index.freqstr == "W-FRI"
+
+
+def test_load_alpha_vantage_daily_passes_explicit_outputsize():
+    session = _Session([_Response(_daily_payload())])
+
+    result = alpha_vantage.load_alpha_vantage_daily(
+        "MSFT", "test-key", outputsize="full", session=session, backoff_factor=0
+    )
+
+    assert session.calls[0][1]["params"] == {
+        "function": "TIME_SERIES_DAILY_ADJUSTED",
+        "symbol": "MSFT",
+        "apikey": "test-key",
+        "outputsize": "full",
+    }
+    assert isinstance(result.index, pd.DatetimeIndex)
+
+
+def test_load_alpha_vantage_daily_rejects_invalid_outputsize():
+    with pytest.raises(ValueError, match="outputsize"):
+        alpha_vantage.load_alpha_vantage_daily(
+            "MSFT", "test-key", outputsize="invalid", session=_Session([])
+        )

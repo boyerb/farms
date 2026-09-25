@@ -22,7 +22,7 @@ python -m pip install -e .
 
 The data-loading functions require an internet connection when called.
 
-## Alpha Vantage monthly adjusted prices
+## Alpha Vantage adjusted prices
 
 `format_alpha_vantage` formats a response from Alpha Vantage's
 `TIME_SERIES_MONTHLY_ADJUSTED` endpoint. `load_alpha_vantage_monthly` downloads
@@ -80,6 +80,31 @@ print(monthly.head())
 
 Use `format_alpha_vantage(response)` directly when the HTTP request is managed
 by the calling application.
+
+The same parser supports weekly and daily adjusted data:
+
+```python
+weekly = farms.load_alpha_vantage_weekly(
+    symbol="MSFT",
+    api_key=os.environ["ALPHAVANTAGE_API_KEY"],
+    start_date="2020-01-01",
+    end_date="2020-12-31",
+)
+
+daily = farms.load_alpha_vantage_daily(
+    symbol="MSFT",
+    api_key=os.environ["ALPHAVANTAGE_API_KEY"],
+    start_date="2020-01-01",
+    end_date="2020-12-31",
+    outputsize="full",
+)
+```
+
+Monthly results use a monthly `PeriodIndex`; weekly results use a `W-FRI`
+`PeriodIndex`; daily results use a `DatetimeIndex`. Weekly and daily date
+bounds use `YYYY-MM-DD`. Daily results also include `Split Coefficient`.
+`outputsize="compact"` requests the latest 100 daily observations, while
+`outputsize="full"` requests the full available daily history.
 
 ## CRSP stock data (WRDS)
 
