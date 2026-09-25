@@ -27,6 +27,8 @@ The data-loading functions require an internet connection when called.
 `format_alpha_vantage` formats a response from Alpha Vantage's
 `TIME_SERIES_MONTHLY_ADJUSTED` endpoint. `load_alpha_vantage_monthly` downloads
 and formats the same data, with timeouts and retries for transient failures.
+For a single ticker and a selected series across any supported frequency, use
+`load_alpha_vantage`; its `frequency` and `field` arguments are required.
 Obtain an API key from
 [Alpha Vantage](https://www.alphavantage.co/support/#api-key) before making a
 request.
@@ -38,6 +40,7 @@ request.
 | `r` | Yes | A `requests.Response` from a successful `TIME_SERIES_MONTHLY_ADJUSTED` request. |
 | `start_date` | No | `YYYY-MM`; `None` leaves the lower date bound unbounded. |
 | `end_date` | No | `YYYY-MM`; `None` leaves the upper date bound unbounded. The range is inclusive. |
+| `field` | No | Select one field: `"open"`, `"high"`, `"low"`, `"close"`, or `"returns"`. If omitted, return all fields. |
 
 Invalid, reversed, rate-limited, or malformed API responses raise clear
 exceptions.
@@ -60,8 +63,42 @@ chronologically.
 | `Adjusted Close` | Split- and dividend-adjusted monthly closing price. |
 | `Volume` | Monthly trading volume. |
 | `Dividend Amount` | Dividend amount for the month. |
+| `Return` | Decimal percentage change in `Adjusted Close`; `0.01` means 1%. The first available observation is `NaN` because it has no prior observation. |
 
-All output columns are numeric.
+All output columns are numeric. `Return` is the final column for monthly and
+weekly Alpha Vantage results.
+
+To request only one series, pass `field`. The result remains a DataFrame with
+one column, which is convenient for aligning several ticker results side by
+side:
+
+```python
+returns = farms.load_alpha_vantage_monthly(
+    symbol="MSFT",
+    api_key=os.environ["ALPHAVANTAGE_API_KEY"],
+    field="returns",
+)
+```
+
+The `field` option is available on the monthly and weekly loaders and their
+corresponding formatters. `"returns"` uses the decimal percentage change in
+`Adjusted Close`.
+
+The generalized loader requires one ticker string and one field:
+
+```python
+close = farms.load_alpha_vantage(
+    symbol="MSFT",
+    api_key=os.environ["ALPHAVANTAGE_API_KEY"],
+    frequency="weekly",
+    field="close",
+)
+```
+
+Daily Alpha Vantage data is intentionally not exposed because the adjusted
+daily endpoint requires premium access. This package's Alpha Vantage loader
+is therefore fully usable with a free account and supports monthly and weekly
+data only.
 
 ### Examples
 
@@ -81,7 +118,7 @@ print(monthly.head())
 Use `format_alpha_vantage(response)` directly when the HTTP request is managed
 by the calling application.
 
-The same parser supports weekly and daily adjusted data:
+The same parser supports weekly adjusted data:
 
 ```python
 weekly = farms.load_alpha_vantage_weekly(
@@ -90,21 +127,10 @@ weekly = farms.load_alpha_vantage_weekly(
     start_date="2020-01-01",
     end_date="2020-12-31",
 )
-
-daily = farms.load_alpha_vantage_daily(
-    symbol="MSFT",
-    api_key=os.environ["ALPHAVANTAGE_API_KEY"],
-    start_date="2020-01-01",
-    end_date="2020-12-31",
-    outputsize="full",
-)
 ```
 
 Monthly results use a monthly `PeriodIndex`; weekly results use a `W-FRI`
-`PeriodIndex`; daily results use a `DatetimeIndex`. Weekly and daily date
-bounds use `YYYY-MM-DD`. Daily results also include `Split Coefficient`.
-`outputsize="compact"` requests the latest 100 daily observations, while
-`outputsize="full"` requests the full available daily history.
+`PeriodIndex`. Weekly date bounds use `YYYY-MM-DD`.
 
 ## CRSP stock data (WRDS)
 

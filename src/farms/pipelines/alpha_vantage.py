@@ -61,7 +61,16 @@ class AlphaVantageResponseError(AlphaVantageError):
     """Raised when an Alpha Vantage response is malformed or reports an error."""
 
 
-Frequency = Literal["monthly", "weekly", "daily"]
+Frequency = Literal["monthly", "weekly"]
+Field = Literal["open", "high", "low", "close", "returns"]
+
+_FIELD_COLUMNS = {
+    "open": "Open",
+    "high": "High",
+    "low": "Low",
+    "close": "Close",
+    "returns": "Return",
+}
 
 
 def _parse_bound(value: str | None, name: str, frequency: Frequency):
@@ -92,9 +101,20 @@ def _validate_date_range(
 
 
 def _validate_frequency(frequency: str) -> Frequency:
-    if frequency not in _FREQUENCY_CONFIG:
-        raise ValueError("frequency must be 'monthly', 'weekly', or 'daily'.")
+    if frequency not in {"monthly", "weekly"}:
+        raise ValueError(
+            "frequency must be 'monthly' or 'weekly'; daily Alpha Vantage "
+            "data is not supported for free-account compatibility."
+        )
     return frequency  # type: ignore[return-value]
+
+
+def _validate_field(field: str | None) -> Field | None:
+    if field is None:
+        return None
+    if not isinstance(field, str) or field.casefold() not in _FIELD_COLUMNS:
+        raise ValueError("field must be one of 'open', 'high', 'low', 'close', or 'returns'.")
+    return field.casefold()  # type: ignore[return-value]
 
 
 def _validate_request_options(
@@ -103,6 +123,7 @@ def _validate_request_options(
     start_date: str | None,
     end_date: str | None,
     frequency: Frequency,
+    field: str | None,
     outputsize: str | None,
     max_retries: int,
     backoff_factor: float,
@@ -113,11 +134,9 @@ def _validate_request_options(
     if not isinstance(api_key, str) or not api_key.strip():
         raise ValueError("api_key must be a nonempty string.")
     _validate_date_range(start_date, end_date, frequency)
+    _validate_field(field)
 
-    if frequency == "daily":
-        if outputsize not in {"compact", "full"}:
-            raise ValueError("outputsize must be 'compact' or 'full'.")
-    elif outputsize is not None:
+    if outputsize is not None:
         raise ValueError("outputsize is only supported for daily data.")
 
     if (
@@ -149,12 +168,14 @@ def _load_alpha_vantage(
     start_date: str | None,
     end_date: str | None,
     *,
+    field: Field | None = None,
     outputsize: str | None = None,
     timeout: float | tuple[float, float] = 30,
     max_retries: int = 3,
     backoff_factor: float = 1.0,
     session: requests.Session | None = None,
 ) -> pd.DataFrame:
+    frequency = _validate_frequency(frequency)
     config = _FREQUENCY_CONFIG[frequency]
     _validate_request_options(
         symbol,
@@ -162,6 +183,7 @@ def _load_alpha_vantage(
         start_date,
         end_date,
         frequency,
+        field,
         outputsize,
         max_retries,
         backoff_factor,
@@ -198,7 +220,7 @@ def _load_alpha_vantage(
 
         try:
             return format_alpha_vantage_time_series(
-                response, frequency, start_date, end_date
+                response, frequency, start_date, end_date, field=field
             )
         except AlphaVantageRateLimitError:
             if attempt >= max_retries:
@@ -209,9 +231,11 @@ def _load_alpha_vantage(
     raise RuntimeError("Alpha Vantage request retry loop ended unexpectedly.")
 
 
-def load_alpha_vantage_monthly(
+def load_alpha_vantage(
     symbol: str,
     api_key: str,
+    frequency: Frequency,
+    field: Field,
     start_date: str | None = None,
     end_date: str | None = None,
     *,
@@ -220,7 +244,54 @@ def load_alpha_vantage_monthly(
     backoff_factor: float = 1.0,
     session: requests.Session | None = None,
 ) -> pd.DataFrame:
-    """Download and format monthly adjusted prices from Alpha Vantage."""
+    """Download one selected Alpha Vantage series for one ticker.
+
+    ``symbol`` must be one ticker string. ``frequency`` must be
+    ``"monthly"`` or ``"weekly"`` and ``field`` is required;
+    it must be ``"open"``, ``"high"``, ``"low"``, ``"close"``, or
+    ``"returns"``. The result is a one-column DataFrame. Daily Alpha Vantage
+    data is intentionally not supported because the adjusted daily endpoint
+    requires premium access.
+    """
+
+    frequency = _validate_frequency(frequency)
+    field = _validate_field(field)
+    if field is None:
+        raise ValueError(
+            "field is required and must be one of 'open', 'high', 'low', "
+            "'close', or 'returns'."
+        )
+    return _load_alpha_vantage(
+        symbol,
+        api_key,
+        frequency,
+        start_date,
+        end_date,
+        field=field,
+        timeout=timeout,
+        max_retries=max_retries,
+        backoff_factor=backoff_factor,
+        session=session,
+    )
+
+
+def load_alpha_vantage_monthly(
+    symbol: str,
+    api_key: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    *,
+    field: Field | None = None,
+    timeout: float | tuple[float, float] = 30,
+    max_retries: int = 3,
+    backoff_factor: float = 1.0,
+    session: requests.Session | None = None,
+) -> pd.DataFrame:
+    """Download monthly adjusted data, optionally selecting one field.
+
+    ``field`` may be ``"open"``, ``"high"``, ``"low"``, ``"close"``, or
+    ``"returns"``. When omitted, all parsed fields are returned.
+    """
 
     return _load_alpha_vantage(
         symbol,
@@ -228,6 +299,7 @@ def load_alpha_vantage_monthly(
         "monthly",
         start_date,
         end_date,
+        field=field,
         timeout=timeout,
         max_retries=max_retries,
         backoff_factor=backoff_factor,
@@ -241,12 +313,17 @@ def load_alpha_vantage_weekly(
     start_date: str | None = None,
     end_date: str | None = None,
     *,
+    field: Field | None = None,
     timeout: float | tuple[float, float] = 30,
     max_retries: int = 3,
     backoff_factor: float = 1.0,
     session: requests.Session | None = None,
 ) -> pd.DataFrame:
-    """Download and format weekly adjusted prices from Alpha Vantage."""
+    """Download weekly adjusted data, optionally selecting one field.
+
+    ``field`` may be ``"open"``, ``"high"``, ``"low"``, ``"close"``, or
+    ``"returns"``. When omitted, all parsed fields are returned.
+    """
 
     return _load_alpha_vantage(
         symbol,
@@ -254,6 +331,7 @@ def load_alpha_vantage_weekly(
         "weekly",
         start_date,
         end_date,
+        field=field,
         timeout=timeout,
         max_retries=max_retries,
         backoff_factor=backoff_factor,
@@ -267,17 +345,14 @@ def load_alpha_vantage_daily(
     start_date: str | None = None,
     end_date: str | None = None,
     *,
+    field: Field | None = None,
     outputsize: Literal["compact", "full"] = "compact",
     timeout: float | tuple[float, float] = 30,
     max_retries: int = 3,
     backoff_factor: float = 1.0,
     session: requests.Session | None = None,
 ) -> pd.DataFrame:
-    """Download and format daily adjusted prices from Alpha Vantage.
-
-    ``outputsize="compact"`` requests the latest 100 observations; use
-    ``outputsize="full"`` to request the full available daily history.
-    """
+    """Disabled compatibility wrapper for the premium daily endpoint."""
 
     return _load_alpha_vantage(
         symbol,
@@ -285,6 +360,7 @@ def load_alpha_vantage_daily(
         "daily",
         start_date,
         end_date,
+        field=field,
         outputsize=outputsize,
         timeout=timeout,
         max_retries=max_retries,
@@ -297,30 +373,42 @@ def format_alpha_vantage(
     response: requests.Response,
     start_date: str | None = None,
     end_date: str | None = None,
+    *,
+    field: Field | None = None,
 ) -> pd.DataFrame:
-    """Format a monthly adjusted Alpha Vantage response."""
+    """Format a monthly response, optionally selecting one field."""
 
-    return format_alpha_vantage_time_series(response, "monthly", start_date, end_date)
+    return format_alpha_vantage_time_series(
+        response, "monthly", start_date, end_date, field=field
+    )
 
 
 def format_alpha_vantage_weekly(
     response: requests.Response,
     start_date: str | None = None,
     end_date: str | None = None,
+    *,
+    field: Field | None = None,
 ) -> pd.DataFrame:
-    """Format a weekly adjusted Alpha Vantage response."""
+    """Format a weekly response, optionally selecting one field."""
 
-    return format_alpha_vantage_time_series(response, "weekly", start_date, end_date)
+    return format_alpha_vantage_time_series(
+        response, "weekly", start_date, end_date, field=field
+    )
 
 
 def format_alpha_vantage_daily(
     response: requests.Response,
     start_date: str | None = None,
     end_date: str | None = None,
+    *,
+    field: Field | None = None,
 ) -> pd.DataFrame:
-    """Format a daily adjusted Alpha Vantage response."""
+    """Disabled compatibility wrapper for the premium daily endpoint."""
 
-    return format_alpha_vantage_time_series(response, "daily", start_date, end_date)
+    return format_alpha_vantage_time_series(
+        response, "daily", start_date, end_date, field=field
+    )
 
 
 def format_alpha_vantage_time_series(
@@ -328,15 +416,23 @@ def format_alpha_vantage_time_series(
     frequency: Frequency = "monthly",
     start_date: str | None = None,
     end_date: str | None = None,
+    *,
+    field: Field | None = None,
 ) -> pd.DataFrame:
     """Format an adjusted Alpha Vantage response for one frequency.
 
-    Monthly bounds use ``YYYY-MM``. Weekly and daily bounds use ``YYYY-MM-DD``.
-    Monthly and weekly results use a ``PeriodIndex``; daily results use a
-    ``DatetimeIndex``. Daily results also include ``Split Coefficient``.
+    Monthly bounds use ``YYYY-MM``. Weekly bounds use ``YYYY-MM-DD``.
+    Monthly and weekly results use a ``PeriodIndex``. Every
+    result includes ``Return`` as its final column: the decimal percentage
+    change in ``Adjusted Close`` (for example, ``0.01`` means 1 percent).
+    The first available observation has no prior observation, so its return is
+    ``NaN``. If ``field`` is supplied, only the corresponding column is
+    returned. Accepted values are ``"open"``, ``"high"``, ``"low"``,
+    ``"close"``, and ``"returns"``.
     """
 
     frequency = _validate_frequency(frequency)
+    field = _validate_field(field)
     config = _FREQUENCY_CONFIG[frequency]
     start_bound, end_bound = _validate_date_range(start_date, end_date, frequency)
 
@@ -427,6 +523,10 @@ def format_alpha_vantage_time_series(
         )
     df = df.sort_index()
 
+    # Calculate before applying date bounds so the first requested observation
+    # can use the prior observation returned by Alpha Vantage when available.
+    df["Return"] = df["Adjusted Close"].pct_change()
+
     if start_bound is not None:
         df = df[df.index >= start_bound]
     if end_bound is not None:
@@ -436,5 +536,10 @@ def format_alpha_vantage_time_series(
     metadata = data.get("Meta Data")
     if isinstance(metadata, Mapping) and metadata.get("2. Symbol"):
         df.attrs["symbol"] = metadata["2. Symbol"]
+
+    if field is not None:
+        selected = df[[_FIELD_COLUMNS[field]]].copy()
+        selected.attrs = df.attrs.copy()
+        return selected
 
     return df

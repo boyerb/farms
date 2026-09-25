@@ -15,6 +15,7 @@ _OUTPUT_COLUMNS = [
     "Adjusted Close",
     "Volume",
     "Dividend Amount",
+    "Return",
 ]
 
 
@@ -36,23 +37,24 @@ class _Response:
         return self.payload
 
 
-def _month(open_price, dividend="0.0000"):
+def _month(open_price, dividend="0.0000", adjusted_close="10.5000"):
     return {
         "1. open": open_price,
         "2. high": "22.0000",
         "3. low": "9.0000",
         "4. close": "11.0000",
-        "5. adjusted close": "10.5000",
+        "5. adjusted close": adjusted_close,
         "6. volume": "123456",
         "7. dividend amount": dividend,
     }
 
 
 def _successful_payload():
+    february = _month("20.0000", "0.1000", adjusted_close="11.5500")
     return {
         "Meta Data": {"2. Symbol": "TEST"},
         "Monthly Adjusted Time Series": {
-            "2020-02-28": _month("20.0000", "0.1000"),
+            "2020-02-28": february,
             "2020-01-31": _month("10.0000"),
         },
     }
@@ -64,21 +66,6 @@ def _weekly_payload():
         "Weekly Adjusted Time Series": {
             "2020-02-28": _month("20.0000", "0.1000"),
             "2020-01-31": _month("10.0000"),
-        },
-    }
-
-
-def _daily_payload():
-    def daily_month(open_price, dividend="0.0000"):
-        month = _month(open_price, dividend)
-        month["8. split coefficient"] = "1.0000"
-        return month
-
-    return {
-        "Meta Data": {"2. Symbol": "TEST"},
-        "Time Series (Daily)": {
-            "2020-02-03": daily_month("20.0000", "0.1000"),
-            "2020-02-01": daily_month("10.0000"),
         },
     }
 
@@ -99,6 +86,27 @@ def test_formats_adjusted_monthly_data_by_explicit_api_field_names():
     ]
     assert result.loc[pd.Period("2020-01", freq="M"), "Open"] == pytest.approx(10.0)
     assert result.loc[pd.Period("2020-02", freq="M"), "Dividend Amount"] == pytest.approx(0.1)
+    assert pd.isna(result.loc[pd.Period("2020-01", freq="M"), "Return"])
+    assert result.loc[pd.Period("2020-02", freq="M"), "Return"] == pytest.approx(0.1)
+    assert result.attrs["symbol"] == "TEST"
+
+
+@pytest.mark.parametrize(
+    "field, column",
+    [
+        ("open", "Open"),
+        ("high", "High"),
+        ("low", "Low"),
+        ("close", "Close"),
+        ("returns", "Return"),
+    ],
+)
+def test_selects_one_monthly_field(field, column):
+    result = alpha_vantage.format_alpha_vantage(
+        _Response(_successful_payload()), field=field
+    )
+
+    assert list(result.columns) == [column]
     assert result.attrs["symbol"] == "TEST"
 
 
@@ -142,21 +150,13 @@ def test_formats_weekly_adjusted_data_with_weekly_periods():
         pd.Period("2020-01-31", freq="W-FRI"),
         pd.Period("2020-02-28", freq="W-FRI"),
     ]
+    assert result.columns[-1] == "Return"
     assert result.attrs["symbol"] == "TEST"
 
 
-def test_formats_daily_adjusted_data_with_split_coefficient():
-    result = alpha_vantage.format_alpha_vantage_daily(
-        _Response(_daily_payload()), "2020-02-01", "2020-02-02"
-    )
-
-    assert isinstance(result.index, pd.DatetimeIndex)
-    assert result.index.name == "date"
-    assert list(result.index) == [pd.Timestamp("2020-02-01")]
-    assert "Split Coefficient" in result.columns
-    assert result.loc[pd.Timestamp("2020-02-01"), "Split Coefficient"] == pytest.approx(
-        1.0
-    )
+def test_daily_formatter_is_disabled_for_free_account_compatibility():
+    with pytest.raises(ValueError, match="daily.*not supported"):
+        alpha_vantage.format_alpha_vantage_daily(_Response({}))
 
 
 def test_empty_date_filter_preserves_public_schema():
@@ -213,6 +213,61 @@ def test_uses_specific_response_error_types():
         alpha_vantage.format_alpha_vantage(
             _Response({"Note": "API call frequency limit reached."})
         )
+
+
+def test_rejects_invalid_field():
+    with pytest.raises(ValueError, match="field"):
+        alpha_vantage.format_alpha_vantage(
+            _Response(_successful_payload()), field="volume"
+        )
+
+
+def test_load_alpha_vantage_passes_selected_field_to_formatter():
+    session = _Session([_Response(_successful_payload())])
+
+    result = alpha_vantage.load_alpha_vantage_monthly(
+        "MSFT", "test-key", field="returns", session=session, backoff_factor=0
+    )
+
+    assert list(result.columns) == ["Return"]
+
+
+def test_general_loader_accepts_one_ticker_and_requires_field():
+    session = _Session([_Response(_successful_payload())])
+
+    result = alpha_vantage.load_alpha_vantage(
+        "MSFT",
+        "test-key",
+        frequency="monthly",
+        field="close",
+        session=session,
+        backoff_factor=0,
+    )
+
+    assert list(result.columns) == ["Close"]
+    assert session.calls[0][1]["params"]["symbol"] == "MSFT"
+
+
+def test_general_loader_rejects_missing_field():
+    with pytest.raises(ValueError, match="field is required"):
+        alpha_vantage.load_alpha_vantage(
+            "MSFT", "test-key", frequency="monthly", field=None
+        )
+
+
+def test_general_loader_rejects_daily_frequency_before_request():
+    session = _Session([])
+
+    with pytest.raises(ValueError, match="daily.*not supported"):
+        alpha_vantage.load_alpha_vantage(
+            "MSFT",
+            "test-key",
+            frequency="daily",
+            field="close",
+            session=session,
+        )
+
+    assert session.calls == []
     with pytest.raises(AlphaVantageResponseError):
         alpha_vantage.format_alpha_vantage(
             _Response({"Error Message": "Invalid API call."})
@@ -300,24 +355,8 @@ def test_load_alpha_vantage_weekly_uses_weekly_endpoint():
     assert result.index.freqstr == "W-FRI"
 
 
-def test_load_alpha_vantage_daily_passes_explicit_outputsize():
-    session = _Session([_Response(_daily_payload())])
-
-    result = alpha_vantage.load_alpha_vantage_daily(
-        "MSFT", "test-key", outputsize="full", session=session, backoff_factor=0
-    )
-
-    assert session.calls[0][1]["params"] == {
-        "function": "TIME_SERIES_DAILY_ADJUSTED",
-        "symbol": "MSFT",
-        "apikey": "test-key",
-        "outputsize": "full",
-    }
-    assert isinstance(result.index, pd.DatetimeIndex)
-
-
-def test_load_alpha_vantage_daily_rejects_invalid_outputsize():
-    with pytest.raises(ValueError, match="outputsize"):
+def test_load_alpha_vantage_daily_is_disabled():
+    with pytest.raises(ValueError, match="daily.*not supported"):
         alpha_vantage.load_alpha_vantage_daily(
-            "MSFT", "test-key", outputsize="invalid", session=_Session([])
+            "MSFT", "test-key", session=_Session([])
         )
