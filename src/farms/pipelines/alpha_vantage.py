@@ -8,6 +8,8 @@ from typing import Literal
 import pandas as pd
 import requests
 
+from .Ken_French_library import load_ken_french_data
+
 _ADJUSTED_FIELDS = {
     "1. open": "Open",
     "2. high": "High",
@@ -86,6 +88,7 @@ def get_alpha_vantage_api_key() -> str:
 
 Frequency = Literal["monthly", "weekly"]
 Field = Literal["open", "high", "low", "close", "returns"]
+FactorSelection = Literal["none", "market", "ff3", "ff5"]
 
 _FIELD_COLUMNS = {
     "open": "Open",
@@ -93,6 +96,15 @@ _FIELD_COLUMNS = {
     "low": "Low",
     "close": "Close",
     "returns": "Return",
+}
+
+_FACTOR_COLUMNS = {
+    "Mkt-RF": "ff_mkt_rf",
+    "SMB": "ff_smb",
+    "HML": "ff_hml",
+    "RMW": "ff_rmw",
+    "CMA": "ff_cma",
+    "RF": "ff_rf",
 }
 
 
@@ -158,6 +170,53 @@ def _normalize_symbols(symbol: str | Iterable[str]) -> list[str]:
     if len(set(symbols)) != len(symbols):
         raise ValueError("symbol must not contain duplicate ticker strings.")
     return symbols
+
+
+def _validate_include_factors(include_factors: str) -> FactorSelection:
+    if not isinstance(include_factors, str):
+        raise ValueError(
+            "include_factors must be 'none', 'market', 'ff3', or 'ff5'."
+        )
+    selection = include_factors.casefold()
+    if selection not in {"none", "market", "ff3", "ff5"}:
+        raise ValueError(
+            "include_factors must be 'none', 'market', 'ff3', or 'ff5'."
+        )
+    return selection  # type: ignore[return-value]
+
+
+def _load_alpha_vantage_factors(
+    frequency: Frequency,
+    start_date: str | None,
+    end_date: str | None,
+    include_factors: FactorSelection,
+) -> pd.DataFrame | None:
+    """Load and select Ken French factors for an Alpha Vantage result."""
+    if include_factors == "none":
+        return None
+
+    model = "ff3" if include_factors == "market" else include_factors
+    factor_data = load_ken_french_data(
+        model,
+        frequency=frequency,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    factor_columns = {
+        "market": ["Mkt-RF", "RF"],
+        "ff3": ["Mkt-RF", "SMB", "HML", "RF"],
+        "ff5": ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF"],
+    }[include_factors]
+    missing_columns = [
+        column for column in factor_columns if column not in factor_data.columns
+    ]
+    if missing_columns:
+        raise ValueError(
+            "Ken French factor data is missing required columns: "
+            + ", ".join(missing_columns)
+        )
+    return factor_data[factor_columns].rename(columns=_FACTOR_COLUMNS)
 
 
 def _validate_request_options(
@@ -282,6 +341,7 @@ def load_alpha_vantage(
     start_date: str | None = None,
     end_date: str | None = None,
     *,
+    include_factors: FactorSelection = "market",
     timeout: float | tuple[float, float] = 30,
     max_retries: int = 3,
     backoff_factor: float = 1.0,
@@ -296,6 +356,13 @@ def load_alpha_vantage(
     Multiple tickers produce one column per ticker, named with the ticker
     symbols. Daily Alpha Vantage data is intentionally not supported because
     the adjusted daily endpoint requires premium access.
+
+    ``include_factors`` selects decimal-return factors from the Kenneth French
+    Data Library. ``"market"`` (the default) adds the market excess return
+    and risk-free rate, ``"ff3"`` adds the three-factor model and risk-free
+    rate, ``"ff5"`` adds the five-factor model and risk-free rate, and
+    ``"none"`` adds no factors. Weekly FF5 data is not published by the
+    Kenneth French Data Library.
     """
 
     frequency = _validate_frequency(frequency)
@@ -305,6 +372,7 @@ def load_alpha_vantage(
             "field is required and must be one of 'open', 'high', 'low', "
             "'close', or 'returns'."
         )
+    factor_selection = _validate_include_factors(include_factors)
     symbols = _normalize_symbols(symbol)
     frames = [
         _load_alpha_vantage(
@@ -322,19 +390,28 @@ def load_alpha_vantage(
         for ticker in symbols
     ]
     if len(frames) == 1:
-        return frames[0]
-
-    result = pd.concat(
-        [
-            frame.rename(columns={frame.columns[0]: ticker})
-            for frame, ticker in zip(frames, symbols)
-        ],
-        axis=1,
-        join="outer",
+        result = frames[0]
+    else:
+        result = pd.concat(
+            [
+                frame.rename(columns={frame.columns[0]: ticker})
+                for frame, ticker in zip(frames, symbols)
+            ],
+            axis=1,
+            join="outer",
+        )
+    factor_data = _load_alpha_vantage_factors(
+        frequency,
+        start_date,
+        end_date,
+        factor_selection,
     )
+    if factor_data is not None:
+        result = result.join(factor_data, how="left")
     result.attrs["symbols"] = symbols
     result.attrs["frequency"] = frequency
     result.attrs["field"] = field
+    result.attrs["include_factors"] = factor_selection
     return result
 
 

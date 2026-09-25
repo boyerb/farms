@@ -97,7 +97,8 @@ corresponding formatters. `"returns"` uses the decimal percentage change in
 `Adjusted Close`.
 
 The generalized loader requires one ticker string or an iterable of ticker
-strings, plus one field:
+strings, plus one field. By default, it also merges the monthly or weekly
+Kenneth French market excess return and risk-free rate:
 
 ```python
 close = farms.load_alpha_vantage(
@@ -107,6 +108,20 @@ close = farms.load_alpha_vantage(
     field="close",
 )
 ```
+
+Use `include_factors` to choose the factor columns:
+
+| `include_factors` | Added columns |
+| --- | --- |
+| `"market"` (default) | `ff_mkt_rf`, `ff_rf` |
+| `"ff3"` | `ff_mkt_rf`, `ff_smb`, `ff_hml`, `ff_rf` |
+| `"ff5"` | `ff_mkt_rf`, `ff_smb`, `ff_hml`, `ff_rmw`, `ff_cma`, `ff_rf` |
+| `"none"` | No factor columns |
+
+Factor values are decimal returns from the `farms` Ken French loader and are
+joined by the Alpha Vantage date index. Weekly FF5 data is not published by
+the Kenneth French Data Library, so `include_factors="ff5"` is available only
+for monthly Alpha Vantage data.
 
 Daily Alpha Vantage data is intentionally not exposed because the adjusted
 daily endpoint requires premium access. This package's Alpha Vantage loader

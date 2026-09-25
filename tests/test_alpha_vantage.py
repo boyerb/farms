@@ -61,6 +61,20 @@ def _successful_payload():
     }
 
 
+def _factor_frame():
+    return pd.DataFrame(
+        {
+            "Mkt-RF": [0.01, 0.02],
+            "SMB": [0.003, 0.004],
+            "HML": [-0.002, -0.001],
+            "RMW": [0.005, 0.006],
+            "CMA": [-0.004, -0.003],
+            "RF": [0.0001, 0.0002],
+        },
+        index=pd.period_range("2020-01", periods=2, freq="M", name="date"),
+    )
+
+
 def test_get_alpha_vantage_api_key_reads_local_environment(monkeypatch):
     monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "test-key")
 
@@ -255,6 +269,7 @@ def test_general_loader_accepts_one_ticker_and_requires_field():
         "test-key",
         frequency="monthly",
         field="close",
+        include_factors="none",
         session=session,
         backoff_factor=0,
     )
@@ -273,6 +288,7 @@ def test_general_loader_aligns_multiple_tickers_side_by_side():
         "test-key",
         frequency="monthly",
         field="returns",
+        include_factors="none",
         session=session,
         backoff_factor=0,
     )
@@ -284,6 +300,100 @@ def test_general_loader_aligns_multiple_tickers_side_by_side():
         "MSFT",
         "AAPL",
     ]
+
+
+@pytest.mark.parametrize(
+    ("include_factors", "expected_columns"),
+    [
+        ("market", ["Close", "ff_mkt_rf", "ff_rf"]),
+        ("ff3", ["Close", "ff_mkt_rf", "ff_smb", "ff_hml", "ff_rf"]),
+        (
+            "ff5",
+            [
+                "Close",
+                "ff_mkt_rf",
+                "ff_smb",
+                "ff_hml",
+                "ff_rmw",
+                "ff_cma",
+                "ff_rf",
+            ],
+        ),
+        ("none", ["Close"]),
+    ],
+)
+def test_general_loader_merges_requested_ken_french_factors(
+    monkeypatch, include_factors, expected_columns
+):
+    session = _Session([_Response(_successful_payload())])
+    calls = []
+
+    def fake_factor_loader(model, **kwargs):
+        calls.append((model, kwargs))
+        return _factor_frame()
+
+    monkeypatch.setattr(alpha_vantage, "load_ken_french_data", fake_factor_loader)
+
+    result = alpha_vantage.load_alpha_vantage(
+        "MSFT",
+        "test-key",
+        frequency="monthly",
+        field="close",
+        include_factors=include_factors,
+        start_date="2020-01",
+        end_date="2020-02",
+        session=session,
+        backoff_factor=0,
+    )
+
+    assert list(result.columns) == expected_columns
+    assert result.attrs["include_factors"] == include_factors
+    if include_factors == "none":
+        assert calls == []
+    else:
+        expected_model = "ff3" if include_factors == "market" else include_factors
+        assert calls == [
+            (
+                expected_model,
+                {
+                    "frequency": "monthly",
+                    "start_date": "2020-01",
+                    "end_date": "2020-02",
+                },
+            )
+        ]
+
+
+def test_general_loader_defaults_to_market_factors(monkeypatch):
+    session = _Session([_Response(_successful_payload())])
+    monkeypatch.setattr(
+        alpha_vantage,
+        "load_ken_french_data",
+        lambda *args, **kwargs: _factor_frame(),
+    )
+
+    result = alpha_vantage.load_alpha_vantage(
+        "MSFT",
+        "test-key",
+        frequency="monthly",
+        field="close",
+        session=session,
+        backoff_factor=0,
+    )
+
+    assert list(result.columns) == ["Close", "ff_mkt_rf", "ff_rf"]
+
+
+def test_general_loader_rejects_invalid_factor_selection():
+    with pytest.raises(ValueError, match="include_factors"):
+        alpha_vantage.load_alpha_vantage(
+            "MSFT",
+            "test-key",
+            frequency="monthly",
+            field="close",
+            include_factors="ff4",
+            session=_Session([]),
+        )
 
 
 @pytest.mark.parametrize("symbols", [[], ["MSFT", "MSFT"], ["MSFT", ""]])
