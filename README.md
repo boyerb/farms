@@ -27,8 +27,8 @@ The data-loading functions require an internet connection when called.
 `format_alpha_vantage` formats a response from Alpha Vantage's
 `TIME_SERIES_MONTHLY_ADJUSTED` endpoint. `load_alpha_vantage_monthly` downloads
 and formats the same data, with timeouts and retries for transient failures.
-For a single ticker and a selected series across any supported frequency, use
-`load_alpha_vantage`; its `frequency` and `field` arguments are required.
+For one or more tickers and a selected series across any supported frequency,
+use `load_alpha_vantage`; its `frequency` and `field` arguments are required.
 Obtain an API key from
 [Alpha Vantage](https://www.alphavantage.co/support/#api-key) before making a
 request.
@@ -79,14 +79,15 @@ chronologically.
 All output columns are numeric. `Return` is the final column for monthly and
 weekly Alpha Vantage results.
 
-To request only one series, pass `field`. The result remains a DataFrame with
-one column, which is convenient for aligning several ticker results side by
-side:
+To request only one series, pass `field`. A single ticker produces a DataFrame
+with one selected-field column. Multiple tickers are fetched and aligned by
+date, producing one column per ticker:
 
 ```python
-returns = farms.load_alpha_vantage_monthly(
-    symbol="MSFT",
+returns = farms.load_alpha_vantage(
+    symbol=["MSFT", "AAPL", "GOOG"],
     api_key=os.environ["ALPHAVANTAGE_API_KEY"],
+    frequency="monthly",
     field="returns",
 )
 ```
@@ -95,11 +96,12 @@ The `field` option is available on the monthly and weekly loaders and their
 corresponding formatters. `"returns"` uses the decimal percentage change in
 `Adjusted Close`.
 
-The generalized loader requires one ticker string and one field:
+The generalized loader requires one ticker string or an iterable of ticker
+strings, plus one field:
 
 ```python
 close = farms.load_alpha_vantage(
-    symbol="MSFT",
+    symbol=["MSFT", "AAPL"],
     api_key=os.environ["ALPHAVANTAGE_API_KEY"],
     frequency="weekly",
     field="close",

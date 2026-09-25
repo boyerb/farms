@@ -1,7 +1,7 @@
 import os
 import re
 import time
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from numbers import Real
 from typing import Literal
 
@@ -140,6 +140,26 @@ def _validate_field(field: str | None) -> Field | None:
     return field.casefold()  # type: ignore[return-value]
 
 
+def _normalize_symbols(symbol: str | Iterable[str]) -> list[str]:
+    if isinstance(symbol, str):
+        symbols = [symbol]
+    else:
+        try:
+            symbols = list(symbol)
+        except TypeError as error:
+            raise ValueError(
+                "symbol must be a ticker string or an iterable of ticker strings."
+            ) from error
+
+    if not symbols:
+        raise ValueError("symbol must contain at least one ticker string.")
+    if any(not isinstance(item, str) or not item.strip() for item in symbols):
+        raise ValueError("symbol must contain only nonempty ticker strings.")
+    if len(set(symbols)) != len(symbols):
+        raise ValueError("symbol must not contain duplicate ticker strings.")
+    return symbols
+
+
 def _validate_request_options(
     symbol: str,
     api_key: str,
@@ -255,7 +275,7 @@ def _load_alpha_vantage(
 
 
 def load_alpha_vantage(
-    symbol: str,
+    symbol: str | Iterable[str],
     api_key: str,
     frequency: Frequency,
     field: Field,
@@ -267,14 +287,15 @@ def load_alpha_vantage(
     backoff_factor: float = 1.0,
     session: requests.Session | None = None,
 ) -> pd.DataFrame:
-    """Download one selected Alpha Vantage series for one ticker.
+    """Download one selected Alpha Vantage series for one or more tickers.
 
-    ``symbol`` must be one ticker string. ``frequency`` must be
-    ``"monthly"`` or ``"weekly"`` and ``field`` is required;
-    it must be ``"open"``, ``"high"``, ``"low"``, ``"close"``, or
-    ``"returns"``. The result is a one-column DataFrame. Daily Alpha Vantage
-    data is intentionally not supported because the adjusted daily endpoint
-    requires premium access.
+    ``symbol`` may be one ticker string or an iterable of ticker strings.
+    ``frequency`` must be ``"monthly"`` or ``"weekly"`` and ``field`` is
+    required; it must be ``"open"``, ``"high"``, ``"low"``, ``"close"``, or
+    ``"returns"``. A single ticker produces one selected-field column.
+    Multiple tickers produce one column per ticker, named with the ticker
+    symbols. Daily Alpha Vantage data is intentionally not supported because
+    the adjusted daily endpoint requires premium access.
     """
 
     frequency = _validate_frequency(frequency)
@@ -284,18 +305,37 @@ def load_alpha_vantage(
             "field is required and must be one of 'open', 'high', 'low', "
             "'close', or 'returns'."
         )
-    return _load_alpha_vantage(
-        symbol,
-        api_key,
-        frequency,
-        start_date,
-        end_date,
-        field=field,
-        timeout=timeout,
-        max_retries=max_retries,
-        backoff_factor=backoff_factor,
-        session=session,
+    symbols = _normalize_symbols(symbol)
+    frames = [
+        _load_alpha_vantage(
+            ticker,
+            api_key,
+            frequency,
+            start_date,
+            end_date,
+            field=field,
+            timeout=timeout,
+            max_retries=max_retries,
+            backoff_factor=backoff_factor,
+            session=session,
+        )
+        for ticker in symbols
+    ]
+    if len(frames) == 1:
+        return frames[0]
+
+    result = pd.concat(
+        [
+            frame.rename(columns={frame.columns[0]: ticker})
+            for frame, ticker in zip(frames, symbols)
+        ],
+        axis=1,
+        join="outer",
     )
+    result.attrs["symbols"] = symbols
+    result.attrs["frequency"] = frequency
+    result.attrs["field"] = field
+    return result
 
 
 def load_alpha_vantage_monthly(

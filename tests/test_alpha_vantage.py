@@ -263,6 +263,37 @@ def test_general_loader_accepts_one_ticker_and_requires_field():
     assert session.calls[0][1]["params"]["symbol"] == "MSFT"
 
 
+def test_general_loader_aligns_multiple_tickers_side_by_side():
+    session = _Session(
+        [_Response(_successful_payload()), _Response(_successful_payload())]
+    )
+
+    result = alpha_vantage.load_alpha_vantage(
+        ["MSFT", "AAPL"],
+        "test-key",
+        frequency="monthly",
+        field="returns",
+        session=session,
+        backoff_factor=0,
+    )
+
+    assert list(result.columns) == ["MSFT", "AAPL"]
+    assert result.attrs["symbols"] == ["MSFT", "AAPL"]
+    assert result.attrs["field"] == "returns"
+    assert [call[1]["params"]["symbol"] for call in session.calls] == [
+        "MSFT",
+        "AAPL",
+    ]
+
+
+@pytest.mark.parametrize("symbols", [[], ["MSFT", "MSFT"], ["MSFT", ""]])
+def test_general_loader_rejects_invalid_ticker_collections(symbols):
+    with pytest.raises(ValueError, match="symbol"):
+        alpha_vantage.load_alpha_vantage(
+            symbols, "test-key", frequency="monthly", field="close"
+        )
+
+
 def test_general_loader_rejects_missing_field():
     with pytest.raises(ValueError, match="field is required"):
         alpha_vantage.load_alpha_vantage(
