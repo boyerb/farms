@@ -124,30 +124,30 @@ _DECILE_COLUMNS = [
     "Hi 10",
 ]
 
-_DECILE_OUTPUT_COLUMNS = [f"Dec {number}" for number in range(1, 11)]
+_DECILE_OUTPUT_COLUMNS = [f"dec{number}" for number in range(1, 11)]
 _DECILE_SOURCE_ALIASES = {
-    "Dec 1": ("Lo 10", "Lo PRIOR", "Dec 1", "PRIOR 1"),
+    "dec1": ("Lo 10", "Lo PRIOR", "Dec 1", "PRIOR 1"),
     **{
-        f"Dec {number}": (
+        f"dec{number}": (
             f"{number}-Dec",
             f"Dec {number}",
             f"PRIOR {number}",
         )
         for number in range(2, 10)
     },
-    "Dec 10": ("Hi 10", "Hi PRIOR", "Dec 10", "PRIOR 10"),
+    "dec10": ("Hi 10", "Hi PRIOR", "Dec 10", "PRIOR 10"),
 }
 
 _PORTFOLIO_VIEWS = {
     "deciles": {
         "count": 10,
-        "prefix": "Dec",
+        "prefix": "dec",
         "source_columns": _DECILE_COLUMNS,
         "output_columns": _DECILE_OUTPUT_COLUMNS,
     },
     "quintiles": {
         "count": 5,
-        "prefix": "Qnt",
+        "prefix": "qnt",
         "source_columns": [
             "Lo 20",
             "Qnt 2",
@@ -155,7 +155,7 @@ _PORTFOLIO_VIEWS = {
             "Qnt 4",
             "Hi 20",
         ],
-        "output_columns": [f"Qnt {number}" for number in range(1, 6)],
+        "output_columns": [f"qnt{number}" for number in range(1, 6)],
     },
 }
 
@@ -412,6 +412,16 @@ def _load_factor_returns(model, frequency, start_date=None, end_date=None):
     )
     df = result[config["table"]].copy()
     df = df.apply(pd.to_numeric, errors="coerce") / 100
+    df = df.rename(
+        columns={
+            "Mkt-RF": "mkt-rf",
+            "SMB": "smb",
+            "HML": "hml",
+            "RMW": "rmw",
+            "CMA": "cma",
+            "RF": "rf",
+        }
+    )
 
     return _normalize_french_index(df, frequency)
 
@@ -477,7 +487,7 @@ def _select_portfolios(data, portfolio, view):
             f"portfolio numbers must be integers from 1 through {count}."
         )
 
-    columns = [f"{prefix} {number}" for number in portfolio_numbers]
+    columns = [f"{prefix}{number}" for number in portfolio_numbers]
     return data.loc[:, columns]
 
 
@@ -596,8 +606,8 @@ def market(start_date=None, end_date=None, frequency="monthly"):
     """Return excess market and risk-free returns from the FF3 data.
 
     The Kenneth French Data Library reports the market factor as the market
-    excess return (``Mkt-RF``). This helper returns that excess market return
-    alongside the risk-free rate (``RF``).
+    excess return. This helper returns it alongside the risk-free rate using
+    the standardized column names ``mkt-rf`` and ``rf``.
 
     Parameters
     ----------
@@ -611,8 +621,7 @@ def market(start_date=None, end_date=None, frequency="monthly"):
     Returns
     -------
     pandas.DataFrame
-        DataFrame with ``Market excess`` and ``Risk-free`` decimal-return
-        columns.
+        DataFrame with ``mkt-rf`` and ``rf`` decimal-return columns.
         The index is the normalized Ken French observation index.
     """
 
@@ -622,7 +631,7 @@ def market(start_date=None, end_date=None, frequency="monthly"):
         start_date=start_date,
         end_date=end_date,
     )
-    required_columns = {"Mkt-RF", "RF"}
+    required_columns = {"mkt-rf", "rf"}
     missing_columns = required_columns.difference(factors.columns)
     if missing_columns:
         missing = ", ".join(sorted(missing_columns))
@@ -630,8 +639,8 @@ def market(start_date=None, end_date=None, frequency="monthly"):
 
     return pd.DataFrame(
         {
-            "Market excess": factors["Mkt-RF"],
-            "Risk-free": factors["RF"],
+            "mkt-rf": factors["mkt-rf"],
+            "rf": factors["rf"],
         },
         index=factors.index,
     )
@@ -798,11 +807,13 @@ def _merge_decile_factors(
         factor_data = load_factors("FF5").rename(
             columns={
                 "Mkt-RF": "mkt-rf",
+                "mkt-rf": "mkt-rf",
                 "SMB": "smb",
                 "HML": "hml",
                 "RMW": "rmw",
                 "CMA": "cma",
                 "RF": "rf",
+                "rf": "rf",
             }
         )
         factor_columns = ["mkt-rf", "smb", "hml", "rmw", "cma", "rf"]
@@ -810,15 +821,22 @@ def _merge_decile_factors(
         factor_data = load_factors("FF3").rename(
             columns={
                 "Mkt-RF": "mkt-rf",
+                "mkt-rf": "mkt-rf",
                 "SMB": "smb",
                 "HML": "hml",
                 "RF": "rf",
+                "rf": "rf",
             }
         )
         factor_columns = ["mkt-rf", "smb", "hml", "rf"]
     else:
         factor_data = load_factors("FF3").rename(
-            columns={"Mkt-RF": "mkt-rf", "RF": "rf"}
+            columns={
+                "Mkt-RF": "mkt-rf",
+                "mkt-rf": "mkt-rf",
+                "RF": "rf",
+                "rf": "rf",
+            }
         )
         factor_columns = ["mkt-rf", "rf"]
 

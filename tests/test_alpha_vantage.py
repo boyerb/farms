@@ -64,12 +64,12 @@ def _successful_payload():
 def _factor_frame():
     return pd.DataFrame(
         {
-            "Mkt-RF": [0.01, 0.02],
-            "SMB": [0.003, 0.004],
-            "HML": [-0.002, -0.001],
-            "RMW": [0.005, 0.006],
-            "CMA": [-0.004, -0.003],
-            "RF": [0.0001, 0.0002],
+            "mkt-rf": [0.01, 0.02],
+            "smb": [0.003, 0.004],
+            "hml": [-0.002, -0.001],
+            "rmw": [0.005, 0.006],
+            "cma": [-0.004, -0.003],
+            "rf": [0.0001, 0.0002],
         },
         index=pd.period_range("2020-01", periods=2, freq="M", name="date"),
     )
@@ -305,18 +305,18 @@ def test_general_loader_aligns_multiple_tickers_side_by_side():
 @pytest.mark.parametrize(
     ("include_factors", "expected_columns"),
     [
-        ("market", ["Close", "ff_mkt_rf", "ff_rf"]),
-        ("ff3", ["Close", "ff_mkt_rf", "ff_smb", "ff_hml", "ff_rf"]),
+        ("market", ["Close", "mkt-rf", "rf"]),
+        ("ff3", ["Close", "mkt-rf", "smb", "hml", "rf"]),
         (
             "ff5",
             [
                 "Close",
-                "ff_mkt_rf",
-                "ff_smb",
-                "ff_hml",
-                "ff_rmw",
-                "ff_cma",
-                "ff_rf",
+                "mkt-rf",
+                "smb",
+                "hml",
+                "rmw",
+                "cma",
+                "rf",
             ],
         ),
         ("none", ["Close"]),
@@ -381,7 +381,7 @@ def test_general_loader_defaults_to_market_factors(monkeypatch):
         backoff_factor=0,
     )
 
-    assert list(result.columns) == ["Close", "ff_mkt_rf", "ff_rf"]
+    assert list(result.columns) == ["Close", "mkt-rf", "rf"]
 
 
 def test_general_loader_rejects_invalid_factor_selection():

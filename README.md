@@ -115,9 +115,9 @@ Use `include_factors` to choose the factor columns:
 
 | `include_factors` | Added columns |
 | --- | --- |
-| `"market"` (default) | `ff_mkt_rf`, `ff_rf` |
-| `"ff3"` | `ff_mkt_rf`, `ff_smb`, `ff_hml`, `ff_rf` |
-| `"ff5"` | `ff_mkt_rf`, `ff_smb`, `ff_hml`, `ff_rmw`, `ff_cma`, `ff_rf` |
+| `"market"` (default) | `mkt-rf`, `rf` |
+| `"ff3"` | `mkt-rf`, `smb`, `hml`, `rf` |
+| `"ff5"` | `mkt-rf`, `smb`, `hml`, `rmw`, `cma`, `rf` |
 | `"none"` | No factor columns |
 
 Factor values are decimal returns from the `farms` Ken French loader and are
@@ -206,9 +206,9 @@ return multiple PERMNOs over the requested date range.
 CRSP price sign convention, `vol` is trading volume, and `shrout` is reported
 by CRSP in thousands of shares.
 
-When requested, factor columns use the non-conflicting names `ff_mkt_rf`,
-`ff_smb`, `ff_hml`, `ff_rmw`, `ff_cma`, and `ff_rf`. The `market` option adds
-`ff_mkt_rf` (the Fama-French market excess return) and `ff_rf`; `ff3` adds SMB
+When requested, factor columns use the names `mkt-rf`, `smb`, `hml`,
+`rmw`, `cma`, and `rf`. The `market` option adds `mkt-rf` (the
+Fama-French market excess return) and `rf`; `ff3` adds SMB
 and HML; `ff5` also adds RMW and CMA. All factor values are decimal returns.
 
 ### Examples
@@ -376,10 +376,10 @@ returns in percent.
 
 | Function | Frequency and index | Columns |
 | --- | --- | --- |
-| `get_ff3` | Monthly `PeriodIndex` | `Mkt-RF`, `SMB`, `HML`, `RF` |
-| `get_ff5` | Monthly `PeriodIndex` | `Mkt-RF`, `SMB`, `HML`, `RMW`, `CMA`, `RF` |
-| `get_ff3d` | Daily `DatetimeIndex` | `Mkt-RF`, `SMB`, `HML`, `RF` |
-| `get_ff5d` | Daily `DatetimeIndex` | `Mkt-RF`, `SMB`, `HML`, `RMW`, `CMA`, `RF` |
+| `get_ff3` | Monthly `PeriodIndex` | `mkt-rf`, `smb`, `hml`, `rf` |
+| `get_ff5` | Monthly `PeriodIndex` | `mkt-rf`, `smb`, `hml`, `rmw`, `cma`, `rf` |
+| `get_ff3d` | Daily `DatetimeIndex` | `mkt-rf`, `smb`, `hml`, `rf` |
+| `get_ff5d` | Daily `DatetimeIndex` | `mkt-rf`, `smb`, `hml`, `rmw`, `cma`, `rf` |
 
 The unified loader also returns weekly FF3 data with a weekly `PeriodIndex`:
 
@@ -450,8 +450,8 @@ ff5_daily = farms.get_ff5d("2025-01-01", "2025-12-31")
 print(ff5_daily.head())
 ```
 
-The daily five-factor result contains `Mkt-RF`, `SMB`, `HML`, `RMW`, `CMA`,
-and `RF`. Dates are optional; supplying only `start_date` retrieves observations
+The daily five-factor result contains `mkt-rf`, `smb`, `hml`, `rmw`, `cma`,
+and `rf`. Dates are optional; supplying only `start_date` retrieves observations
 from that date through the latest available observation:
 
 ```python
@@ -493,7 +493,7 @@ compatibility, but the preferred spelling is `"ff3"` or `"ff5"` with
 ### Output
 
 For a strategy, returns a DataFrame with a monthly `PeriodIndex` named `date`.
-It contains `Dec 1` through `Dec 10`, plus `mkt-rf` and `rf` by default.
+It contains `dec1` through `dec10`, plus `mkt-rf` and `rf` by default.
 `factors="FF3"` adds `smb` and `hml`; `factors="FF5"` additionally adds
 `rmw` and `cma`. With `stype="list"`, the function prints the supported
 strategies and returns `None`.

@@ -99,12 +99,18 @@ _FIELD_COLUMNS = {
 }
 
 _FACTOR_COLUMNS = {
-    "Mkt-RF": "ff_mkt_rf",
-    "SMB": "ff_smb",
-    "HML": "ff_hml",
-    "RMW": "ff_rmw",
-    "CMA": "ff_cma",
-    "RF": "ff_rf",
+    "Mkt-RF": "mkt-rf",
+    "mkt-rf": "mkt-rf",
+    "SMB": "smb",
+    "smb": "smb",
+    "HML": "hml",
+    "hml": "hml",
+    "RMW": "rmw",
+    "rmw": "rmw",
+    "CMA": "cma",
+    "cma": "cma",
+    "RF": "rf",
+    "rf": "rf",
 }
 
 
@@ -204,9 +210,9 @@ def _load_alpha_vantage_factors(
     )
 
     factor_columns = {
-        "market": ["Mkt-RF", "RF"],
-        "ff3": ["Mkt-RF", "SMB", "HML", "RF"],
-        "ff5": ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF"],
+        "market": ["mkt-rf", "rf"],
+        "ff3": ["mkt-rf", "smb", "hml", "rf"],
+        "ff5": ["mkt-rf", "smb", "hml", "rmw", "cma", "rf"],
     }[include_factors]
     missing_columns = [
         column for column in factor_columns if column not in factor_data.columns

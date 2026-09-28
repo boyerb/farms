@@ -39,12 +39,18 @@ _EMPTY_RESULT_DTYPES = {
 }
 
 _CRSP_FACTOR_COLUMNS = {
-    "Mkt-RF": "ff_mkt_rf",
-    "SMB": "ff_smb",
-    "HML": "ff_hml",
-    "RMW": "ff_rmw",
-    "CMA": "ff_cma",
-    "RF": "ff_rf",
+    "Mkt-RF": "mkt-rf",
+    "mkt-rf": "mkt-rf",
+    "SMB": "smb",
+    "smb": "smb",
+    "HML": "hml",
+    "hml": "hml",
+    "RMW": "rmw",
+    "rmw": "rmw",
+    "CMA": "cma",
+    "cma": "cma",
+    "RF": "rf",
+    "rf": "rf",
 }
 
 
@@ -76,17 +82,17 @@ def _merge_crsp_factors(
     ).rename(columns=_CRSP_FACTOR_COLUMNS)
 
     if selection == "market":
-        factor_columns = ["ff_mkt_rf", "ff_rf"]
+        factor_columns = ["mkt-rf", "rf"]
     elif selection == "ff3":
-        factor_columns = ["ff_mkt_rf", "ff_smb", "ff_hml", "ff_rf"]
+        factor_columns = ["mkt-rf", "smb", "hml", "rf"]
     else:
         factor_columns = [
-            "ff_mkt_rf",
-            "ff_smb",
-            "ff_hml",
-            "ff_rmw",
-            "ff_cma",
-            "ff_rf",
+            "mkt-rf",
+            "smb",
+            "hml",
+            "rmw",
+            "cma",
+            "rf",
         ]
 
     missing_columns = [
@@ -134,8 +140,8 @@ def load_crsp_data(
         (``crsp.dsf``). Defaults to ``"monthly"``.
     include_factors : {None, 'none', 'market', 'ff3', 'ff5'}, optional
         Merge Ken French decimal returns at the matching frequency. ``'market'``
-        adds ``ff_mkt_rf`` and ``ff_rf``; ``'ff3'`` adds those plus ``ff_smb``
-        and ``ff_hml``; ``'ff5'`` adds ``ff_rmw`` and ``ff_cma`` as well.
+        adds ``mkt-rf`` and ``rf``; ``'ff3'`` adds those plus ``smb``
+        and ``hml``; ``'ff5'`` adds ``rmw`` and ``cma`` as well.
         ``None`` and ``'none'`` leave the CRSP data unchanged.
 
     Returns
@@ -368,8 +374,8 @@ def load_all_crsp_data(
         (``crsp.dsf``).
     include_factors : {None, 'none', 'market', 'ff3', 'ff5'}, optional
         Merge Ken French decimal returns at the matching frequency. ``'market'``
-        adds ``ff_mkt_rf`` and ``ff_rf``; ``'ff3'`` adds those plus ``ff_smb``
-        and ``ff_hml``; ``'ff5'`` adds ``ff_rmw`` and ``ff_cma`` as well.
+        adds ``mkt-rf`` and ``rf``; ``'ff3'`` adds those plus ``smb``
+        and ``hml``; ``'ff5'`` adds ``rmw`` and ``cma`` as well.
         ``None`` and ``'none'`` leave the CRSP data unchanged.
     share_codes : iterable of int, optional
         Restrict observations to securities whose share code at the beginning

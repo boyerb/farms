@@ -42,12 +42,12 @@ def _factor_frame(frequency="monthly"):
         index = pd.DatetimeIndex(["2020-01-03"], name="date")
     return pd.DataFrame(
         {
-            "Mkt-RF": [0.01],
-            "SMB": [0.002],
-            "HML": [-0.003],
-            "RMW": [0.004],
-            "CMA": [-0.005],
-            "RF": [0.0001],
+            "mkt-rf": [0.01],
+            "smb": [0.002],
+            "hml": [-0.003],
+            "rmw": [0.004],
+            "cma": [-0.005],
+            "rf": [0.0001],
         },
         index=index,
     )
@@ -172,7 +172,7 @@ def test_daily_query_uses_daily_tables_and_datetime_index(monkeypatch):
     assert list(result.index) == [pd.Timestamp("2020-01-03")]
 
 
-def test_load_crsp_merges_market_factors_as_decimal_prefixed_columns(monkeypatch):
+def test_load_crsp_merges_market_factors_with_standardized_columns(monkeypatch):
     _capture_queries(
         monkeypatch,
         [_source_frame([{"date": "2020-01-31", "permno": 14593}])],
@@ -204,10 +204,9 @@ def test_load_crsp_merges_market_factors_as_decimal_prefixed_columns(monkeypatch
             },
         )
     ]
-    assert list(result.columns[-2:]) == ["ff_mkt_rf", "ff_rf"]
-    assert result.loc[pd.Period("2020-01", freq="M"), "ff_mkt_rf"] == pytest.approx(0.01)
-    assert result.loc[pd.Period("2020-01", freq="M"), "ff_rf"] == pytest.approx(0.0001)
-    assert "rf" not in result.columns
+    assert list(result.columns[-2:]) == ["mkt-rf", "rf"]
+    assert result.loc[pd.Period("2020-01", freq="M"), "mkt-rf"] == pytest.approx(0.01)
+    assert result.loc[pd.Period("2020-01", freq="M"), "rf"] == pytest.approx(0.0001)
     assert "ret" in result.columns
 
 
@@ -237,9 +236,9 @@ def test_load_crsp_merges_daily_ff5_factors(monkeypatch):
     assert factor_calls[0][0] == "ff5"
     assert factor_calls[0][1]["frequency"] == "daily"
     assert list(result.columns[-6:]) == [
-        "ff_mkt_rf", "ff_smb", "ff_hml", "ff_rmw", "ff_cma", "ff_rf"
+        "mkt-rf", "smb", "hml", "rmw", "cma", "rf"
     ]
-    assert result.loc[pd.Timestamp("2020-01-03"), "ff_cma"] == pytest.approx(-0.005)
+    assert result.loc[pd.Timestamp("2020-01-03"), "cma"] == pytest.approx(-0.005)
 
 
 def test_load_all_crsp_merges_ff3_factors(monkeypatch):
@@ -261,9 +260,9 @@ def test_load_all_crsp_merges_ff3_factors(monkeypatch):
     )
 
     assert list(result.columns[-4:]) == [
-        "ff_mkt_rf", "ff_smb", "ff_hml", "ff_rf"
+        "mkt-rf", "smb", "hml", "rf"
     ]
-    assert result.loc[pd.Period("2020-01", freq="M"), "ff_hml"] == pytest.approx(-0.003)
+    assert result.loc[pd.Period("2020-01", freq="M"), "hml"] == pytest.approx(-0.003)
 
 
 @pytest.mark.parametrize(

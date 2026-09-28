@@ -212,11 +212,11 @@ def test_load_decile_returns_normalizes_registered_strategy(monkeypatch, strateg
 
     config = french._DECILE_DATASETS[strategy]
     assert calls == [(config["dataset"], "2020-01", "2020-02")]
-    assert list(result.columns) == [f"Dec {number}" for number in range(1, 11)]
+    assert list(result.columns) == [f"dec{number}" for number in range(1, 11)]
     assert result.index.name == "date"
-    assert result.iloc[0]["Dec 1"] == pytest.approx(0.01)
-    assert result.iloc[0]["Dec 10"] == pytest.approx(0.10)
-    assert result.iloc[1]["Dec 1"] == pytest.approx(0.11)
+    assert result.iloc[0]["dec1"] == pytest.approx(0.01)
+    assert result.iloc[0]["dec10"] == pytest.approx(0.10)
+    assert result.iloc[1]["dec1"] == pytest.approx(0.11)
 
 
 def test_load_decile_returns_rejects_unknown_strategy():
@@ -242,8 +242,8 @@ def test_load_decile_returns_accepts_live_hyphenated_column_names(monkeypatch):
 
     result = french._load_decile_returns("momentum")
 
-    assert list(result.columns) == [f"Dec {i}" for i in range(1, 11)]
-    assert result.iloc[0]["Dec 2"] == pytest.approx(0.02)
+    assert list(result.columns) == [f"dec{i}" for i in range(1, 11)]
+    assert result.iloc[0]["dec2"] == pytest.approx(0.02)
 
 
 def test_load_decile_returns_accepts_prior_column_names(monkeypatch):
@@ -263,8 +263,8 @@ def test_load_decile_returns_accepts_prior_column_names(monkeypatch):
 
     result = french._load_decile_returns("momentum")
 
-    assert list(result.columns) == [f"Dec {i}" for i in range(1, 11)]
-    assert result.iloc[0]["Dec 10"] == pytest.approx(0.10)
+    assert list(result.columns) == [f"dec{i}" for i in range(1, 11)]
+    assert result.iloc[0]["dec10"] == pytest.approx(0.10)
 
 
 def test_get_ff3_returns_monthly_decimal_factors(monkeypatch):
@@ -289,12 +289,12 @@ def test_get_ff3_returns_monthly_decimal_factors(monkeypatch):
     result = french.get_ff3("2020-01", "2020-02")
 
     assert calls == [("F-F_Research_Data_Factors", "2020-01", "2020-02")]
-    assert list(result.columns) == ["Mkt-RF", "SMB", "HML", "RF"]
+    assert list(result.columns) == ["mkt-rf", "smb", "hml", "rf"]
     assert isinstance(result.index, pd.PeriodIndex)
     assert result.index.freqstr == "M"
     assert result.index.name == "date"
-    assert result.loc[pd.Period("2020-01", freq="M"), "Mkt-RF"] == pytest.approx(0.02)
-    assert result.loc[pd.Period("2020-02", freq="M"), "HML"] == pytest.approx(0.0025)
+    assert result.loc[pd.Period("2020-01", freq="M"), "mkt-rf"] == pytest.approx(0.02)
+    assert result.loc[pd.Period("2020-02", freq="M"), "hml"] == pytest.approx(0.0025)
 
 
 def test_market_returns_total_market_and_risk_free_returns(monkeypatch):
@@ -321,12 +321,12 @@ def test_market_returns_total_market_and_risk_free_returns(monkeypatch):
     assert calls == [
         ("F-F_Research_Data_Factors", "2020-01", "2020-02")
     ]
-    assert list(result.columns) == ["Market excess", "Risk-free"]
+    assert list(result.columns) == ["mkt-rf", "rf"]
     assert isinstance(result.index, pd.PeriodIndex)
     assert result.index.name == "date"
-    assert result.iloc[0]["Market excess"] == pytest.approx(0.02)
-    assert result.iloc[0]["Risk-free"] == pytest.approx(0.001)
-    assert result.iloc[1]["Market excess"] == pytest.approx(-0.01)
+    assert result.iloc[0]["mkt-rf"] == pytest.approx(0.02)
+    assert result.iloc[0]["rf"] == pytest.approx(0.001)
+    assert result.iloc[1]["mkt-rf"] == pytest.approx(-0.01)
 
 
 def test_get_ff5_filters_dates_and_returns_decimal_factors(monkeypatch):
@@ -355,10 +355,10 @@ def test_get_ff5_filters_dates_and_returns_decimal_factors(monkeypatch):
     assert calls == [
         ("F-F_Research_Data_5_Factors_2x3", "2020-02", "2020-02")
     ]
-    assert list(result.columns) == ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF"]
+    assert list(result.columns) == ["mkt-rf", "smb", "hml", "rmw", "cma", "rf"]
     assert list(result.index) == [pd.Period("2020-02", freq="M")]
-    assert result.iloc[0]["Mkt-RF"] == pytest.approx(-0.01)
-    assert result.iloc[0]["CMA"] == pytest.approx(0.003)
+    assert result.iloc[0]["mkt-rf"] == pytest.approx(-0.01)
+    assert result.iloc[0]["cma"] == pytest.approx(0.003)
 
 
 def test_get_ff3d_returns_filtered_daily_decimal_factors(monkeypatch):
@@ -385,13 +385,13 @@ def test_get_ff3d_returns_filtered_daily_decimal_factors(monkeypatch):
     assert calls == [
         ("F-F_Research_Data_Factors_daily", "2020-01-03", "2020-01-03")
     ]
-    assert list(result.columns) == ["Mkt-RF", "SMB", "HML", "RF"]
+    assert list(result.columns) == ["mkt-rf", "smb", "hml", "rf"]
     assert isinstance(result.index, pd.DatetimeIndex)
     assert result.index.freq is None
     assert result.index.name == "date"
     assert list(result.index) == [pd.Timestamp("2020-01-03")]
-    assert result.iloc[0]["Mkt-RF"] == pytest.approx(-0.02)
-    assert result.iloc[0]["RF"] == pytest.approx(0.0001)
+    assert result.iloc[0]["mkt-rf"] == pytest.approx(-0.02)
+    assert result.iloc[0]["rf"] == pytest.approx(0.0001)
 
 
 def test_get_ff5d_returns_filtered_daily_decimal_factors(monkeypatch):
@@ -420,15 +420,15 @@ def test_get_ff5d_returns_filtered_daily_decimal_factors(monkeypatch):
     assert calls == [
         ("F-F_Research_Data_5_Factors_2x3_daily", "2020-01-03", "2020-01-03")
     ]
-    assert list(result.columns) == ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF"]
+    assert list(result.columns) == ["mkt-rf", "smb", "hml", "rmw", "cma", "rf"]
     assert isinstance(result.index, pd.DatetimeIndex)
     assert result.index.freq is None
     assert result.index.name == "date"
     assert list(result.index) == [pd.Timestamp("2020-01-03")]
-    assert result.iloc[0]["Mkt-RF"] == pytest.approx(-0.02)
-    assert result.iloc[0]["RMW"] == pytest.approx(-0.001)
-    assert result.iloc[0]["CMA"] == pytest.approx(0.003)
-    assert result.iloc[0]["RF"] == pytest.approx(0.0001)
+    assert result.iloc[0]["mkt-rf"] == pytest.approx(-0.02)
+    assert result.iloc[0]["rmw"] == pytest.approx(-0.001)
+    assert result.iloc[0]["cma"] == pytest.approx(0.003)
+    assert result.iloc[0]["rf"] == pytest.approx(0.0001)
 
 
 def test_get_ff3_weekly_returns_period_index_and_decimal_factors(monkeypatch):
@@ -462,8 +462,8 @@ def test_get_ff3_weekly_returns_period_index_and_decimal_factors(monkeypatch):
     ]
     assert isinstance(result.index, pd.PeriodIndex)
     assert result.index.freqstr == "W-FRI"
-    assert result.iloc[0]["Mkt-RF"] == pytest.approx(0.02)
-    assert result.iloc[0]["RF"] == pytest.approx(0.0001)
+    assert result.iloc[0]["mkt-rf"] == pytest.approx(0.02)
+    assert result.iloc[0]["rf"] == pytest.approx(0.0001)
 
 
 def test_unified_loader_dispatches_factor_data(monkeypatch):
@@ -493,8 +493,8 @@ def test_unified_loader_dispatches_factor_data(monkeypatch):
     assert calls == [
         ("F-F_Research_Data_Factors", "2020-01", "2020-01")
     ]
-    assert list(result.columns) == ["Mkt-RF", "SMB", "HML", "RF"]
-    assert result.iloc[0]["Mkt-RF"] == pytest.approx(0.02)
+    assert list(result.columns) == ["mkt-rf", "smb", "hml", "rf"]
+    assert result.iloc[0]["mkt-rf"] == pytest.approx(0.02)
 
 
 def test_unified_loader_accepts_legacy_daily_factor_alias(monkeypatch):
@@ -555,10 +555,10 @@ def test_unified_loader_loads_daily_momentum_deciles(monkeypatch):
     assert calls == [
         ("10_Portfolios_Prior_12_2_Daily", "2020-01-03", "2020-01-03")
     ]
-    assert list(result.columns) == ["Dec 1", "Dec 10"]
+    assert list(result.columns) == ["dec1", "dec10"]
     assert isinstance(result.index, pd.DatetimeIndex)
-    assert result.iloc[0]["Dec 1"] == pytest.approx(0.01)
-    assert result.iloc[0]["Dec 10"] == pytest.approx(0.10)
+    assert result.iloc[0]["dec1"] == pytest.approx(0.01)
+    assert result.iloc[0]["dec10"] == pytest.approx(0.10)
 
 
 def test_unified_loader_rejects_daily_quintiles_without_true_source():
@@ -599,9 +599,9 @@ def test_unified_loader_selects_portfolios_without_adding_factors(monkeypatch):
         portfolio=[1, 10],
     )
 
-    assert list(result.columns) == ["Dec 1", "Dec 10"]
-    assert result.iloc[0]["Dec 1"] == pytest.approx(-0.02)
-    assert result.iloc[0]["Dec 10"] == pytest.approx(0.07)
+    assert list(result.columns) == ["dec1", "dec10"]
+    assert result.iloc[0]["dec1"] == pytest.approx(-0.02)
+    assert result.iloc[0]["dec10"] == pytest.approx(0.07)
 
 
 def test_unified_loader_can_merge_requested_factors(monkeypatch):
@@ -620,13 +620,13 @@ def test_unified_loader_can_merge_requested_factors(monkeypatch):
     )
 
     assert list(result.columns) == [
-        "Dec 10",
+        "dec10",
         "mkt-rf",
         "smb",
         "hml",
         "rf",
     ]
-    assert result.iloc[0]["Dec 10"] == pytest.approx(0.07)
+    assert result.iloc[0]["dec10"] == pytest.approx(0.07)
     assert result.iloc[0]["mkt-rf"] == pytest.approx(-0.01)
 
 
@@ -653,15 +653,15 @@ def test_unified_loader_supports_quintile_portfolios(monkeypatch):
         portfolio="high",
     )
 
-    assert list(result.columns) == ["Qnt 5"]
-    assert result.iloc[0]["Qnt 5"] == pytest.approx(0.05)
+    assert list(result.columns) == ["qnt5"]
+    assert result.iloc[0]["qnt5"] == pytest.approx(0.05)
 
 
 def _sample_deciles():
     """Create one month of predictable decile returns for public-API tests."""
     return pd.DataFrame(
         {
-            f"Dec {number}": [-0.02 + (number - 1) * 0.01]
+            f"dec{number}": [-0.02 + (number - 1) * 0.01]
             for number in range(1, 11)
         },
         index=pd.period_range("2020-02", periods=1, freq="M", name="date"),
@@ -710,7 +710,7 @@ def test_public_decile_loader_supports_every_strategy(monkeypatch, strategy):
 
     assert calls == [(strategy, "2020-02", "2020-02")]
     assert list(result.columns) == [
-        *[f"Dec {number}" for number in range(1, 11)],
+        *[f"dec{number}" for number in range(1, 11)],
         "mkt-rf",
         "rf",
     ]
@@ -739,11 +739,11 @@ def test_public_decile_loader_merges_requested_factors(
     result = french.get_ken_french_deciles("momentum", factors=factors)
 
     assert list(result.columns) == [
-        *[f"Dec {number}" for number in range(1, 11)],
+        *[f"dec{number}" for number in range(1, 11)],
         *expected_columns,
     ]
-    assert result.iloc[0]["Dec 1"] == pytest.approx(-0.02)
-    assert result.iloc[0]["Dec 10"] == pytest.approx(0.07)
+    assert result.iloc[0]["dec1"] == pytest.approx(-0.02)
+    assert result.iloc[0]["dec10"] == pytest.approx(0.07)
     assert result.iloc[0]["mkt-rf"] == pytest.approx(-0.01)
 
 
