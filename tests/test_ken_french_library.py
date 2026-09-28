@@ -297,6 +297,38 @@ def test_get_ff3_returns_monthly_decimal_factors(monkeypatch):
     assert result.loc[pd.Period("2020-02", freq="M"), "HML"] == pytest.approx(0.0025)
 
 
+def test_market_returns_total_market_and_risk_free_returns(monkeypatch):
+    """The market helper should return FF3 excess market and RF returns."""
+    source = pd.DataFrame(
+        {
+            "Mkt-RF": [2.00, -1.00],
+            "SMB": [1.00, 0.50],
+            "HML": [-0.50, 0.25],
+            "RF": [0.10, 0.10],
+        },
+        index=pd.period_range("2020-01", "2020-02", freq="M"),
+    )
+    calls = []
+
+    def fake_loader(dataset, start_date=None, end_date=None):
+        calls.append((dataset, start_date, end_date))
+        return {0: source}
+
+    monkeypatch.setattr(french, "_load_french_dataset", fake_loader)
+
+    result = french.market("2020-01", "2020-02")
+
+    assert calls == [
+        ("F-F_Research_Data_Factors", "2020-01", "2020-02")
+    ]
+    assert list(result.columns) == ["Market excess", "Risk-free"]
+    assert isinstance(result.index, pd.PeriodIndex)
+    assert result.index.name == "date"
+    assert result.iloc[0]["Market excess"] == pytest.approx(0.02)
+    assert result.iloc[0]["Risk-free"] == pytest.approx(0.001)
+    assert result.iloc[1]["Market excess"] == pytest.approx(-0.01)
+
+
 def test_get_ff5_filters_dates_and_returns_decimal_factors(monkeypatch):
     """FF5 should request the selected dates and return decimal factor values."""
     source = pd.DataFrame(

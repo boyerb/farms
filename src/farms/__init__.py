@@ -30,6 +30,7 @@ from .pipelines.Ken_French_library import (
     get_ken_french_deciles,
     list_ken_french_data,
     load_ken_french_data,
+    market,
 )
 from .tools.black_scholes import black_scholes, implied_volatility
 from .tools.portfolio_tools import (
@@ -39,7 +40,11 @@ from .tools.portfolio_tools import (
     portfolio_volatility,
     tangent_portfolio,
 )
-from .tools.plotting_tools import plot_cumulative_wealth, plot_return_histograms
+from .tools.plotting_tools import (
+    plot_cumulative_wealth,
+    plot_return_histograms,
+    plot_return_scatter,
+)
 from .tools.stats_tools import intercept, run_ols, slope, summary_stats
 
 warnings.filterwarnings(
@@ -83,10 +88,12 @@ __all__ = [
     "load_alpha_vantage_weekly",
     "load_crsp_data",
     "load_ken_french_data",
+    "market",
     "portfolio_sharpe",
     "portfolio_volatility",
     "plot_cumulative_wealth",
     "plot_return_histograms",
+    "plot_return_scatter",
     "run_ols",
     "slope",
     "summary_stats",

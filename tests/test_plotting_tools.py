@@ -87,6 +87,87 @@ def test_plot_return_histograms_rejects_unknown_bin_method():
         fm.plot_return_histograms(returns, bins="fd")
 
 
+def test_plot_return_scatter_uses_benchmark_column_and_wraps_panels():
+    returns = pd.DataFrame(
+        {
+            "Dec 1": [0.01, -0.02, 0.03],
+            "Dec 5": [0.02, -0.01, 0.02],
+            "Dec 10": [0.03, -0.01, 0.04],
+            "Market": [0.02, -0.01, 0.03],
+        },
+        index=pd.period_range("2024-01", periods=3, freq="M"),
+    )
+
+    figure, axes = fm.plot_return_scatter(
+        returns,
+        benchmark="Market",
+        ncols=2,
+        title="Portfolio Returns vs Market",
+    )
+
+    assert len(axes) == 3
+    assert figure._suptitle.get_text() == "Portfolio Returns vs Market"
+    assert all(len(axis.collections) == 1 for axis in axes)
+    assert axes[0].get_xlabel() == "Market"
+    assert axes[0].get_ylabel() == "Dec 1"
+    assert figure.axes[-1].get_visible() is False
+    figure.clf()
+
+
+def test_plot_return_scatter_aligns_a_benchmark_series_by_index():
+    returns = pd.DataFrame(
+        {
+            "Portfolio": [0.02, 0.03, 0.04],
+            "Other": [0.01, 0.02, 0.03],
+        },
+        index=pd.Index(["a", "b", "c"]),
+    )
+    benchmark = pd.Series(
+        [0.01, 0.02, 0.03],
+        index=pd.Index(["a", "b", "c"]),
+        name="Market",
+    )
+
+    figure, axes = fm.plot_return_scatter(
+        returns,
+        benchmark=benchmark,
+        columns=["Portfolio"],
+    )
+
+    np.testing.assert_allclose(axes[0].collections[0].get_offsets()[:, 0], [0.01, 0.02, 0.03])
+    np.testing.assert_allclose(axes[0].collections[0].get_offsets()[:, 1], [0.02, 0.03, 0.04])
+    figure.clf()
+
+
+def test_plot_return_scatter_uses_benchmark_index_and_omits_missing_returns():
+    returns = pd.DataFrame(
+        {"Portfolio": [0.01, np.nan, 0.03]},
+        index=pd.Index(["2024-01", "2024-02", "2024-04"]),
+    )
+    benchmark = pd.Series(
+        [0.03, 0.04, 0.05],
+        index=pd.Index(["2024-01", "2024-02", "2024-03"]),
+        name="Market",
+    )
+
+    figure, axes = fm.plot_return_scatter(returns, benchmark=benchmark)
+
+    np.testing.assert_allclose(
+        axes[0].collections[0].get_offsets()[:, 0], [0.03]
+    )
+    np.testing.assert_allclose(
+        axes[0].collections[0].get_offsets()[:, 1], [0.01]
+    )
+    figure.clf()
+
+
+def test_plot_return_scatter_rejects_benchmark_in_selected_columns():
+    returns = pd.DataFrame({"Portfolio": [0.01, 0.02], "Market": [0.02, 0.03]})
+
+    with pytest.raises(ValueError, match="must not include the benchmark"):
+        fm.plot_return_scatter(returns, benchmark="Market", columns=["Market"])
+
+
 def test_plot_cumulative_wealth_compounds_selected_period_returns():
     returns = pd.DataFrame(
         {

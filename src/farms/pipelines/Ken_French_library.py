@@ -592,6 +592,51 @@ def get_ff3(start_date=None, end_date=None):
     )
 
 
+def market(start_date=None, end_date=None, frequency="monthly"):
+    """Return excess market and risk-free returns from the FF3 data.
+
+    The Kenneth French Data Library reports the market factor as the market
+    excess return (``Mkt-RF``). This helper returns that excess market return
+    alongside the risk-free rate (``RF``).
+
+    Parameters
+    ----------
+    start_date : str, optional
+        Inclusive beginning date passed to the Ken French data loader.
+    end_date : str, optional
+        Inclusive ending date passed to the Ken French data loader.
+    frequency : {"monthly", "weekly", "daily"}, default "monthly"
+        Frequency of the FF3 observations.
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame with ``Market excess`` and ``Risk-free`` decimal-return
+        columns.
+        The index is the normalized Ken French observation index.
+    """
+
+    factors = _load_factor_returns(
+        "ff3",
+        frequency,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    required_columns = {"Mkt-RF", "RF"}
+    missing_columns = required_columns.difference(factors.columns)
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise ValueError(f"FF3 data are missing required columns: {missing}")
+
+    return pd.DataFrame(
+        {
+            "Market excess": factors["Mkt-RF"],
+            "Risk-free": factors["RF"],
+        },
+        index=factors.index,
+    )
+
+
 def get_ff5(start_date=None, end_date=None):
     """Return monthly Fama-French five-factor data as decimal returns."""
     return load_ken_french_data(

@@ -145,6 +145,163 @@ def plot_return_histograms(
     return figure, axes[:len(selected_columns)]
 
 
+def plot_return_scatter(
+    returns: pd.DataFrame,
+    benchmark: pd.Series | str,
+    columns: Sequence[str] | None = None,
+    figsize: tuple[float, float] | None = None,
+    title: str | None = None,
+    alpha: float = 0.7,
+    color: str = "steelblue",
+    ncols: int = 3,
+    sharex: bool = True,
+    sharey: bool = True,
+):
+    """Plot selected returns against a benchmark in subplot panels.
+
+    Parameters
+    ----------
+    returns : pandas.DataFrame
+        DataFrame containing decimal-period returns. Each selected column is
+        plotted on the y-axis.
+    benchmark : pandas.Series or str
+        Series plotted on the x-axis, or the name of a column in ``returns``.
+        For an external Series, its index defines the plotting timeline. Any
+        return observations missing from that timeline are excluded, and
+        missing return values on benchmark dates are omitted from the plotted
+        points.
+    columns : sequence of str, optional
+        Return columns to plot. If omitted, all columns are plotted except
+        the benchmark column when ``benchmark`` is a column name.
+    figsize : tuple of float, optional
+        Overall figure size. If omitted, the size is scaled to the subplot
+        grid.
+    title : str, optional
+        Figure-level title.
+    alpha : float, default 0.7
+        Transparency of the scatter points.
+    color : str, default "steelblue"
+        Color of the scatter points.
+    ncols : int, default 3
+        Number of subplot columns. Additional panels wrap onto new rows.
+    sharex : bool, default True
+        Whether all panels use the same x-axis scale.
+    sharey : bool, default True
+        Whether all panels use the same y-axis scale.
+
+    Returns
+    -------
+    tuple
+        ``(figure, axes)`` where ``axes`` is a list containing the visible
+        axes for the selected return columns. Each point represents one
+        aligned benchmark-return observation.
+    """
+
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as exc:  # pragma: no cover - depends on environment
+        raise ImportError(
+            "plot_return_scatter requires Matplotlib; "
+            "install it with 'pip install farms'"
+        ) from exc
+
+    if not isinstance(returns, pd.DataFrame):
+        raise TypeError("returns must be a pandas DataFrame")
+
+    benchmark_column = benchmark if isinstance(benchmark, str) else None
+    if isinstance(benchmark, str):
+        if benchmark not in returns:
+            raise KeyError(f"benchmark column not found in returns: {benchmark}")
+        benchmark_series = returns[benchmark]
+        benchmark_label = benchmark
+    elif isinstance(benchmark, pd.Series):
+        benchmark_series = benchmark
+        benchmark_label = benchmark.name or "Benchmark"
+    else:
+        raise TypeError("benchmark must be a pandas Series or column name")
+
+    if not pd.api.types.is_numeric_dtype(benchmark_series):
+        raise TypeError("benchmark must contain numeric values")
+    if isinstance(columns, str):
+        selected_columns = [columns]
+    else:
+        selected_columns = list(returns.columns if columns is None else columns)
+    if benchmark_column is not None and columns is None:
+        selected_columns = [column for column in selected_columns if column != benchmark_column]
+    if not selected_columns:
+        raise ValueError("columns must contain at least one return column")
+
+    missing_columns = [column for column in selected_columns if column not in returns]
+    if missing_columns:
+        raise KeyError(f"columns not found in returns: {missing_columns}")
+    if benchmark_column is not None and benchmark_column in selected_columns:
+        raise ValueError("columns must not include the benchmark column")
+
+    non_numeric_columns = [
+        column
+        for column in selected_columns
+        if not pd.api.types.is_numeric_dtype(returns[column])
+    ]
+    if non_numeric_columns:
+        raise TypeError(
+            "returns must contain only numeric columns; "
+            f"non-numeric columns: {non_numeric_columns}"
+        )
+
+    if not isinstance(ncols, int) or isinstance(ncols, bool) or ncols <= 0:
+        raise ValueError("ncols must be a positive integer")
+    if not isinstance(alpha, (int, float)) or not 0 < alpha <= 1:
+        raise ValueError("alpha must be greater than 0 and no greater than 1")
+
+    nrows = math.ceil(len(selected_columns) / ncols)
+    if figsize is None:
+        figsize = (4.0 * ncols, 3.5 * nrows)
+
+    figure, axes_grid = plt.subplots(
+        nrows,
+        ncols,
+        figsize=figsize,
+        sharex=sharex,
+        sharey=sharey,
+        squeeze=False,
+    )
+    axes = [axis for row in axes_grid for axis in row]
+
+    for column, axis in zip(selected_columns, axes):
+        # Use the benchmark as the left side of the join, equivalent to a
+        # right merge of ``returns`` onto ``benchmark``. This preserves every
+        # benchmark date while leaving missing portfolio observations as NaN.
+        paired_returns = benchmark_series.rename("benchmark").to_frame().join(
+            returns[column].rename("return"), how="left"
+        ).dropna()
+        if paired_returns.empty:
+            raise ValueError(
+                f"benchmark and return column {column!r} have no overlapping "
+                "non-missing observations"
+            )
+        axis.scatter(
+            paired_returns["benchmark"],
+            paired_returns["return"],
+            alpha=alpha,
+            color=color,
+        )
+        axis.set_title(column)
+        axis.set_xlabel(str(benchmark_label))
+        axis.set_ylabel(column)
+        axis.grid(alpha=0.2)
+
+    for axis in axes[len(selected_columns):]:
+        axis.set_visible(False)
+
+    if title is not None:
+        figure.suptitle(title)
+        figure.tight_layout(rect=(0, 0, 1, 0.95))
+    else:
+        figure.tight_layout()
+
+    return figure, axes[:len(selected_columns)]
+
+
 def plot_cumulative_wealth(
     returns: pd.DataFrame,
     columns: Sequence[str] | None = None,
