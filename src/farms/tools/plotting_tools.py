@@ -14,7 +14,7 @@ def plot_return_bars(
     alpha: float = 0.7,
     edgecolor: str | None = "k",
 ):
-    """Plot frequencies for a discrete set of simulated returns.
+    """Plot relative frequencies for a discrete set of simulated returns.
 
     Parameters
     ----------
@@ -81,11 +81,12 @@ def plot_return_bars(
     counts = np.array(
         [np.sum(simulated_returns == outcome) for outcome in outcomes]
     )
+    relative_frequencies = counts / simulated_returns.size
 
     figure, axis = plt.subplots(figsize=figsize)
     axis.bar(
         outcomes,
-        counts,
+        relative_frequencies,
         width=width,
         align="center",
         edgecolor=edgecolor,
@@ -94,7 +95,7 @@ def plot_return_bars(
     axis.set_xticks(outcomes)
     axis.set_title(title)
     axis.set_xlabel("Return")
-    axis.set_ylabel("Frequency")
+    axis.set_ylabel("Relative frequency")
     axis.grid(alpha=0.2)
     figure.tight_layout()
 

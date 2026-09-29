@@ -8,7 +8,7 @@ matplotlib = pytest.importorskip("matplotlib")
 matplotlib.use("Agg")
 
 
-def test_plot_return_bars_counts_discrete_outcomes():
+def test_plot_return_bars_plots_relative_frequencies_for_discrete_outcomes():
     simulated_returns = np.array([0.1, 0.0, 0.1, -0.1, 0.1, 0.0])
 
     figure, axis = fm.plot_return_bars(
@@ -19,7 +19,11 @@ def test_plot_return_bars_counts_discrete_outcomes():
 
     assert figure._suptitle is None
     assert axis.get_title() == "Simulated returns"
-    assert [patch.get_height() for patch in axis.patches] == [1, 2, 3]
+    np.testing.assert_allclose(
+        [patch.get_height() for patch in axis.patches],
+        [1 / 6, 2 / 6, 3 / 6],
+    )
+    assert axis.get_ylabel() == "Relative frequency"
     np.testing.assert_allclose(axis.get_xticks(), [-0.1, 0.0, 0.1])
     figure.clf()
 
