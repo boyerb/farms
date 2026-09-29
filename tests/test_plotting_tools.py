@@ -8,6 +8,27 @@ matplotlib = pytest.importorskip("matplotlib")
 matplotlib.use("Agg")
 
 
+def test_plot_return_bars_counts_discrete_outcomes():
+    simulated_returns = np.array([0.1, 0.0, 0.1, -0.1, 0.1, 0.0])
+
+    figure, axis = fm.plot_return_bars(
+        simulated_returns,
+        outcomes=[-0.1, 0.0, 0.1],
+        title="Simulated returns",
+    )
+
+    assert figure._suptitle is None
+    assert axis.get_title() == "Simulated returns"
+    assert [patch.get_height() for patch in axis.patches] == [1, 2, 3]
+    np.testing.assert_allclose(axis.get_xticks(), [-0.1, 0.0, 0.1])
+    figure.clf()
+
+
+def test_plot_return_bars_rejects_duplicate_outcomes():
+    with pytest.raises(ValueError, match="duplicate"):
+        fm.plot_return_bars([0.0, 0.1], outcomes=[0.0, 0.0])
+
+
 def test_plot_return_histograms_wraps_columns_and_shows_means():
     returns = pd.DataFrame(
         {

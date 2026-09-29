@@ -5,6 +5,102 @@ import numpy as np
 import pandas as pd
 
 
+def plot_return_bars(
+    simulated_returns,
+    outcomes,
+    title: str | None = None,
+    figsize: tuple[float, float] = (3.0, 3.0),
+    width: float = 0.04,
+    alpha: float = 0.7,
+    edgecolor: str | None = "k",
+):
+    """Plot frequencies for a discrete set of simulated returns.
+
+    Parameters
+    ----------
+    simulated_returns : array-like
+        One-dimensional simulated return observations.
+    outcomes : sequence of float
+        Possible return values. Bars are centered on these values, in the
+        order supplied.
+    title : str, optional
+        Plot title.
+    figsize : tuple of float, default ``(3.0, 3.0)``
+        Figure size passed to ``plt.subplots``.
+    width : float, default ``0.04``
+        Width of each bar in return units.
+    alpha : float, default ``0.7``
+        Bar transparency.
+    edgecolor : str or None, default ``"k"``
+        Edge color passed to ``Axes.bar``.
+
+    Returns
+    -------
+    tuple
+        ``(figure, axis)`` containing the Matplotlib figure and axis.
+
+    Notes
+    -----
+    This helper is intended for discrete simulated outcomes. Use
+    :func:`plot_return_histograms` for continuous return observations.
+    """
+
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as exc:  # pragma: no cover - depends on environment
+        raise ImportError(
+            "plot_return_bars requires Matplotlib; "
+            "install it with 'pip install farms'"
+        ) from exc
+
+    simulated_returns = np.asarray(simulated_returns)
+    if simulated_returns.ndim != 1:
+        raise ValueError("simulated_returns must be one-dimensional")
+    if not np.issubdtype(simulated_returns.dtype, np.number):
+        raise TypeError("simulated_returns must contain numeric values")
+    if simulated_returns.size == 0:
+        raise ValueError("simulated_returns must contain at least one value")
+
+    outcomes = np.asarray(outcomes)
+    if outcomes.ndim != 1:
+        raise ValueError("outcomes must be one-dimensional")
+    if outcomes.size == 0:
+        raise ValueError("outcomes must contain at least one value")
+    if not np.issubdtype(outcomes.dtype, np.number):
+        raise TypeError("outcomes must contain numeric values")
+    if not np.isfinite(outcomes).all():
+        raise ValueError("outcomes must contain only finite values")
+    if np.unique(outcomes).size != outcomes.size:
+        raise ValueError("outcomes must not contain duplicate values")
+
+    if not isinstance(width, (int, float)) or isinstance(width, bool) or width <= 0:
+        raise ValueError("width must be a positive number")
+    if not isinstance(alpha, (int, float)) or not 0 < alpha <= 1:
+        raise ValueError("alpha must be greater than 0 and no greater than 1")
+
+    counts = np.array(
+        [np.sum(simulated_returns == outcome) for outcome in outcomes]
+    )
+
+    figure, axis = plt.subplots(figsize=figsize)
+    axis.bar(
+        outcomes,
+        counts,
+        width=width,
+        align="center",
+        edgecolor=edgecolor,
+        alpha=alpha,
+    )
+    axis.set_xticks(outcomes)
+    axis.set_title(title)
+    axis.set_xlabel("Return")
+    axis.set_ylabel("Frequency")
+    axis.grid(alpha=0.2)
+    figure.tight_layout()
+
+    return figure, axis
+
+
 def plot_return_histograms(
     returns: pd.DataFrame,
     columns: Sequence[str] | None = None,

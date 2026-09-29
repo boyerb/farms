@@ -42,6 +42,7 @@ from .tools.portfolio_tools import (
 )
 from .tools.plotting_tools import (
     plot_cumulative_wealth,
+    plot_return_bars,
     plot_return_histograms,
     plot_return_scatter,
 )
@@ -92,6 +93,7 @@ __all__ = [
     "portfolio_sharpe",
     "portfolio_volatility",
     "plot_cumulative_wealth",
+    "plot_return_bars",
     "plot_return_histograms",
     "plot_return_scatter",
     "run_ols",
