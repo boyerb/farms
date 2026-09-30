@@ -46,7 +46,7 @@ from .tools.plotting_tools import (
     plot_return_histograms,
     plot_return_scatter,
 )
-from .tools.stats_tools import intercept, run_ols, slope, summary_stats
+from .tools.stats_tools import intercept, linear_regression_summary, slope, summary_stats
 
 warnings.filterwarnings(
     "ignore",
@@ -96,7 +96,7 @@ __all__ = [
     "plot_return_bars",
     "plot_return_histograms",
     "plot_return_scatter",
-    "run_ols",
+    "linear_regression_summary",
     "slope",
     "summary_stats",
     "tangent_portfolio"

@@ -125,9 +125,9 @@ def slope(y,x):
 
 
 
-def run_ols(X, Y, ci=0.95):
+def linear_regression_summary(X, Y, ci=0.95):
     """
-    Runs OLS regression of Y on X and returns coefficients and confidence intervals.
+    Runs a linear regression of Y on X and returns coefficients and confidence intervals.
 
     Parameters
     ----------
