@@ -189,7 +189,11 @@ python -m pip install wrds
 | `frequency` | No | `"monthly"` or `"daily"`; defaults to `"monthly"`. |
 | `include_factors` | No | `None`/`"none"`, `"market"`, `"ff3"`, or `"ff5"`; merges matching-frequency Ken French decimal returns. |
 
-For monthly data, the date range refers to complete calendar months. For
+For monthly data, the loader uses WRDS's current CRSP CIZ/v2 monthly stock
+table (`crsp.msf_v2`) and point-in-time security history
+(`crsp.stksecurityinfohist`). The legacy SIZ monthly tables stopped receiving
+new observations after December 2024. For monthly data, the date range refers
+to complete calendar months. For
 example, `start_date="2020-01"` and `end_date="2020-03"` returns observations
 from January through March 2020. For daily data, the range is inclusive of the
 specified calendar dates.
@@ -203,8 +207,13 @@ volume, and shares-outstanding fields.
 Ticker lookups use the historical CRSP name records, so a reused ticker may
 return multiple PERMNOs over the requested date range.
 `ret` and `retx` are decimal returns (`0.01` means 1%). `prc` follows the
-CRSP price sign convention, `vol` is trading volume, and `shrout` is reported
-by CRSP in thousands of shares.
+CRSP price sign convention, `vol` is trading volume. For legacy daily data,
+`shrout` is reported in thousands of shares; current CIZ/v2 monthly data
+reports actual shares.
+
+The current CIZ/v2 monthly format replaces the legacy numeric `shrcd` and
+`exchcd` fields with descriptive security attributes; those two legacy output
+columns are therefore missing for monthly v2 results.
 
 When requested, factor columns use the names `mkt-rf`, `smb`, `hml`,
 `rmw`, `cma`, and `rf`. The `market` option adds `mkt-rf` (the

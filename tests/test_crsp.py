@@ -115,11 +115,16 @@ def test_permno_query_is_parameterized_and_returns_monthly_period_index(monkeypa
     assert {"2020-01-01", "2020-03-01"}.issubset(
         _parameter_dates(call["params"])
     )
+    assert "FROM crsp.msf_v2 a" in call["sql"]
+    assert "crsp.stksecurityinfohist" in call["sql"]
+    assert "a.mthcaldt AS date" in call["sql"]
+    assert "a.mthret AS ret" in call["sql"]
+    assert "a.mthretx AS retx" in call["sql"]
+    assert "a.mthvol AS vol" in call["sql"]
+    assert "a.mthcaldt <= b.secinfoenddt" in call["sql"]
     assert "14593" not in call["sql"]
     assert "12079" not in call["sql"]
-    assert "a.date >= b.namedt" in call["sql"]
-    assert "a.date <= b.nameendt" in call["sql"]
-    assert "a.date < %s" in call["sql"]
+    assert "a.mthcaldt < %s" in call["sql"]
 
     assert list(result.columns) == _RESULT_COLUMNS
     assert isinstance(result.index, pd.PeriodIndex)
@@ -405,21 +410,27 @@ def test_load_all_monthly_data_screens_on_prior_month_observations(monkeypatch):
 
     sql = calls[0]["sql"]
     params = calls[0]["params"]
-    assert "FROM crspm.msf a" in sql
-    assert "crspm.msenames" in sql
+    assert "FROM crsp.msf_v2 a" in sql
+    assert "crsp.stksecurityinfohist" in sql
+    assert "a.mthcaldt AS date" in sql
+    assert "a.mthret AS ret" in sql
     assert "FROM (\n                    SELECT DISTINCT ON (p.permno)" in sql
-    assert "ORDER BY p.permno, p.date DESC, pb.nameendt DESC NULLS LAST" in sql
+    assert "ORDER BY p.permno, p.mthcaldt DESC, pb.secinfoenddt DESC NULLS LAST" in sql
     assert "date_trunc('month', prior_date) = date_trunc('month', date - INTERVAL '1 month')" in sql
     assert "LAG(screen_prc) OVER security_window AS prior_prc" in sql
     assert "LAG(screen_shrout) OVER security_window AS prior_shrout" in sql
-    assert "LAG(screen_shrcd) OVER security_window AS prior_shrcd" in sql
+    assert "LAG(screen_sharetype) OVER security_window AS prior_sharetype" in sql
+    assert "prior_sharetype = 'NS'" in sql
+    assert "prior_securitytype = 'EQTY'" in sql
+    assert "prior_securitysubtype = 'COM'" in sql
+    assert "prior_usincflg = 'Y'" in sql
     assert "a.permno IN" not in sql
-    assert "ABS(prior_prc) * prior_shrout * 1000 > %s" in sql
-    assert "ABS(prior_prc) * prior_shrout * 1000 < %s" in sql
+    assert "ABS(prior_prc) * prior_shrout > %s" in sql
+    assert "ABS(prior_prc) * prior_shrout < %s" in sql
     assert "ABS(prior_prc) > %s" in sql
     assert "ABS(prior_prc) < %s" in sql
     assert {"2009-03-01", "2009-04-01"}.issubset(_parameter_dates(params))
-    assert {10, 11, 1_000_000.0, 2_000_000_000.0, 5.0, 500.0}.issubset(
+    assert {1_000_000.0, 2_000_000_000.0, 5.0, 500.0}.issubset(
         set(_values(params))
     )
     assert isinstance(result.index, pd.PeriodIndex)
