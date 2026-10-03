@@ -25,7 +25,8 @@ def summary_stats(
     risk_free : pandas.Series, float, int, or None, default None
         Decimal risk-free return for each observation, or a scalar risk-free
         return that applies to every observation. If supplied, annualized
-        excess mean and Sharpe ratio are included in the result.
+        excess mean and Sharpe ratio are included in the result. The Sharpe
+        ratio uses the volatility of the excess returns as its denominator.
     frequency : {"daily", "weekly", "monthly"}, default "monthly"
         Frequency of the observations. The function uses 252, 52, or 12
         periods per year, respectively.
@@ -42,6 +43,8 @@ def summary_stats(
     -----
     Arithmetic means are annualized by multiplying by the number of periods
     per year. Volatility is annualized using square-root-of-time scaling.
+    When ``risk_free`` is supplied, the Sharpe ratio is calculated as the
+    annualized excess mean divided by annualized excess-return volatility.
     Minimums and percentiles are intentionally not included because they are
     period-specific distribution statistics, not quantities that should be
     annualized by simple multiplication.
@@ -94,9 +97,12 @@ def summary_stats(
             raise TypeError("risk_free must be a numeric Series or scalar")
 
         annualized_excess_mean = periods_per_year * excess_returns.mean()
+        annualized_excess_volatility = (
+            np.sqrt(periods_per_year) * excess_returns.std()
+        )
         result["Annualized excess mean"] = annualized_excess_mean
         result["Annualized Sharpe ratio"] = annualized_excess_mean.div(
-            annualized_volatility.where(annualized_volatility != 0)
+            annualized_excess_volatility.where(annualized_excess_volatility != 0)
         )
 
     return result

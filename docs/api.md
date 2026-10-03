@@ -725,7 +725,7 @@ Calculates annualized summary statistics for portfolio returns.
 
 **Optional Inputs**
 
-- `risk_free` — Default is `None`. Accepts a numeric Series aligned to `returns.index`, a scalar numeric value, or a one-column DataFrame. When supplied, adds annualized excess mean and Sharpe ratio. Example: `risk_free=0.002`.
+- `risk_free` — Default is `None`. Accepts a numeric Series aligned to `returns.index`, a scalar numeric value, or a one-column DataFrame. When supplied, adds annualized excess mean and Sharpe ratio. The Sharpe ratio uses excess-return volatility as its denominator. Example: `risk_free=0.002`.
 - `frequency` — Default is `'monthly'`. Selects the annualization frequency. Potential values are `'daily'`, `'weekly'`, and `'monthly'`. Example: `frequency='daily'`.
 
 **Outputs**

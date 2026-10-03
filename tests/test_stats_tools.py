@@ -58,6 +58,21 @@ def test_summary_stats_accepts_a_scalar_risk_free_rate():
     assert result.loc["Portfolio", "Annualized excess mean"] == pytest.approx(0.12)
 
 
+def test_summary_stats_uses_excess_return_volatility_for_sharpe_ratio():
+    returns = pd.DataFrame({"Portfolio": [0.10, 0.10, 0.10]})
+    risk_free = pd.Series([0.00, 0.02, 0.04])
+
+    result = fm.summary_stats(returns, risk_free=risk_free)
+    excess_returns = returns["Portfolio"] - risk_free
+    expected_sharpe = (12 * excess_returns.mean()) / (
+        np.sqrt(12) * excess_returns.std()
+    )
+
+    assert result.loc["Portfolio", "Annualized Sharpe ratio"] == pytest.approx(
+        expected_sharpe
+    )
+
+
 def test_summary_stats_returns_nan_sharpe_for_zero_volatility():
     returns = pd.DataFrame({"Portfolio": [0.01, 0.01, 0.01]})
 
