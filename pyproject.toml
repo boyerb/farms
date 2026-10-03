@@ -16,6 +16,7 @@ dependencies = [
     "pandas>=2.2,<4",
     "pandas-datareader>=0.11,<1",
     "requests>=2.32.4",
+    "scipy>=1.11",
     "statsmodels>=0.14.5",
 ]
 

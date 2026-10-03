@@ -35,7 +35,9 @@ from .pipelines.Ken_French_library import (
 from .tools.black_scholes import black_scholes, implied_volatility
 from .tools.portfolio_tools import (
     EFRS_portfolio,
+    PortfolioResult,
     describe,
+    efrs_portfolio,
     portfolio_sharpe,
     portfolio_volatility,
     tangent_portfolio,
@@ -66,8 +68,10 @@ __all__ = [
     "AlphaVantageRateLimitError",
     "AlphaVantageResponseError",
     "EFRS_portfolio",
+    "PortfolioResult",
     "black_scholes",
     "describe",
+    "efrs_portfolio",
     "format_alpha_vantage",
     "format_alpha_vantage_daily",
     "format_alpha_vantage_time_series",

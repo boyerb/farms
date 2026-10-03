@@ -24,6 +24,35 @@ python -m pip install -e .
 
 The data-loading functions require an internet connection when called.
 
+## Efficient-frontier portfolios
+
+`efrs_portfolio` computes the minimum-variance portfolio for a target return
+using the supplied expected-return vector and covariance matrix. The portfolio
+is fully invested in the supplied assets; no separate risk-free allocation is
+included. Short selling is allowed by default, so use `allow_short=False` or
+`bounds` when investment limits are required:
+
+```python
+import farms
+
+weights, expected_return, volatility = farms.efrs_portfolio(
+    target_return=0.08,
+    expected_returns=[0.05, 0.08, 0.11],
+    covariance_matrix=[
+        [0.04, 0.01, 0.00],
+        [0.01, 0.05, 0.01],
+        [0.00, 0.01, 0.06],
+    ],
+    allow_short=False,
+)
+```
+
+Inputs must be finite, dimensionally compatible, and use the same return
+frequency. The covariance matrix must be symmetric and positive semidefinite.
+Set `return_result=True` to receive `PortfolioResult` diagnostics, including
+the variance and solver used. The legacy `EFRS_portfolio` name remains
+available.
+
 ## Alpha Vantage adjusted prices
 
 `format_alpha_vantage` formats a response from Alpha Vantage's
