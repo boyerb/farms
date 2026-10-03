@@ -24,7 +24,9 @@ python -m pip install -e .
 
 The data-loading functions require an internet connection when called.
 
-## Efficient-frontier portfolios
+## Tools
+
+### Efficient-frontier portfolios
 
 `efrs_portfolio` computes the minimum-variance portfolio for a target return
 using the supplied expected-return vector and covariance matrix. The portfolio
@@ -53,7 +55,37 @@ Set `return_result=True` to receive `PortfolioResult` diagnostics, including
 the variance and solver used. The legacy `EFRS_portfolio` name remains
 available.
 
-## Alpha Vantage adjusted prices
+### Historical factor-tilt portfolios
+
+`historical_factor_tilt_portfolio` estimates mean excess returns and a
+covariance matrix from historical returns, then selects the maximum-Sharpe
+tilts around a base portfolio. The base portfolio weight is fixed at `1.0`;
+the other columns represent zero-cost portfolios, so their weights do not
+have to sum to one.
+
+The base column is column `0` by default, or can be selected by label when
+`returns` is a DataFrame. Historical returns should use decimal values, such
+as `0.01` for 1 percent. Rows with missing or non-finite values are dropped by
+default:
+
+```python
+import farms
+
+weights, expected_return, volatility = farms.historical_factor_tilt_portfolio(
+    returns,
+    base_column="mkt-rf",
+)
+```
+
+Use `tilt_bounds` to constrain the zero-cost portfolio exposures. Set
+`return_result=True` to receive `HistoricalFactorTiltResult`, which also
+contains the estimated mean vector, covariance matrix, variance, Sharpe ratio,
+observation count, and solver diagnostics. When expected returns and a
+covariance matrix are already available, use `factor_tilt_portfolio` directly.
+
+## Pipelines
+
+### Alpha Vantage adjusted prices
 
 `format_alpha_vantage` formats a response from Alpha Vantage's
 `TIME_SERIES_MONTHLY_ADJUSTED` endpoint. `load_alpha_vantage_monthly` downloads
@@ -75,7 +107,7 @@ import farms
 api_key = farms.get_alpha_vantage_api_key()
 ```
 
-### Inputs
+#### Inputs
 
 | Parameter | Required | Format and behavior |
 | --- | --- | --- |
@@ -94,7 +126,7 @@ and Alpha Vantage rate-limit messages. `AlphaVantageRateLimitError` and
 `AlphaVantageResponseError` are available when callers need to handle those
 conditions separately.
 
-### Output
+#### Output
 
 Returns a DataFrame with a monthly `PeriodIndex` named `date`, sorted
 chronologically.
@@ -159,7 +191,7 @@ daily endpoint requires premium access. This package's Alpha Vantage loader
 is therefore fully usable with a free account and supports monthly and weekly
 data only.
 
-### Examples
+#### Examples
 
 ```python
 import os
@@ -191,7 +223,7 @@ weekly = farms.load_alpha_vantage_weekly(
 Monthly results use a monthly `PeriodIndex`; weekly results use a `W-FRI`
 `PeriodIndex`. Weekly date bounds use `YYYY-MM-DD`.
 
-## CRSP stock data (WRDS)
+### CRSP stock data (WRDS)
 
 `load_crsp_data` loads CRSP monthly or daily stock-file observations through a
 caller-provided [WRDS](https://wrds-www.wharton.upenn.edu/) connection. You
@@ -205,7 +237,7 @@ alias.
 python -m pip install wrds
 ```
 
-### Inputs
+#### Inputs
 
 | Parameter | Required | Format and behavior |
 | --- | --- | --- |
@@ -227,7 +259,7 @@ example, `start_date="2020-01"` and `end_date="2020-03"` returns observations
 from January through March 2020. For daily data, the range is inclusive of the
 specified calendar dates.
 
-### Output
+#### Output
 
 Returns a DataFrame with a chronologically sorted `date` index. Monthly results
 use a `PeriodIndex`; daily results use a `DatetimeIndex`. Columns include
@@ -249,7 +281,7 @@ When requested, factor columns use the names `mkt-rf`, `smb`, `hml`,
 Fama-French market excess return) and `rf`; `ff3` adds SMB
 and HML; `ff5` also adds RMW and CMA. All factor values are decimal returns.
 
-### Examples
+#### Examples
 
 Query by PERMNO:
 
@@ -280,7 +312,7 @@ monthly = farms.load_crsp_data(
 db.close()
 ```
 
-## All-security CRSP loader
+### All-security CRSP loader
 
 `load_all_crsp_data` loads every CRSP security in a bounded monthly or daily
 date range. Optional `share_codes`, market-cap, and price screens are applied
@@ -328,7 +360,7 @@ reports `shrout` in thousands. Price and market-cap bounds are strict; use
 only the lower bound for `> x`, only the upper bound for `< x`, or both for a
 range.
 
-## Unified Kenneth French loader
+### Unified Kenneth French loader
 
 `load_ken_french_data` is the central loader for normalized Kenneth French
 factor and portfolio data. The existing `get_ff3`, `get_ff5`, `get_ff3d`,
@@ -390,9 +422,9 @@ For portfolio data, `portfolio=None` or `"all"` returns every portfolio;
 selects specific portfolios. `include_factors=None` leaves portfolio data
 unchanged, while `"market"`, `"ff3"`, or `"ff5"` adds factor columns.
 
-## Fama-French factors
+### Fama-French factors
 
-### Inputs
+#### Inputs
 
 For Fama-French factor loaders and Kenneth French decile portfolios,
 `start_date` and `end_date` are optional.
@@ -406,7 +438,7 @@ For Fama-French factor loaders and Kenneth French decile portfolios,
 Use month-formatted dates (`YYYY-MM`) for monthly data. Use day-formatted
 dates (`YYYY-MM-DD`) for weekly, daily, and daily portfolio data.
 
-### Outputs
+#### Outputs
 
 All factor loaders return decimal returns (`0.01` means 1%) and an index named
 `date`. This differs from the Kenneth French source files, which report
@@ -430,7 +462,7 @@ ff3_weekly = farms.load_ken_french_data(
 )
 ```
 
-### Examples
+#### Examples
 
 ```python
 # Full available history through the latest available observation
@@ -499,9 +531,9 @@ ff5_daily = farms.get_ff5d(start_date="2025-01-01")
 Monthly and weekly factor data use a pandas `PeriodIndex`. Daily factor data
 use a pandas `DatetimeIndex`.
 
-## Kenneth French decile and quintile portfolios
+### Kenneth French decile and quintile portfolios
 
-### Inputs
+#### Inputs
 
 | Parameter | Required | Format and behavior |
 | --- | --- | --- |
@@ -528,7 +560,7 @@ compatibility, but the preferred spelling is `"ff3"` or `"ff5"` with
 `frequency="daily"`.
 | `details` | No | Set to `True` to print the strategy title, construction details, and available dates. |
 
-### Output
+#### Output
 
 For a strategy, returns a DataFrame with a monthly `PeriodIndex` named `date`.
 It contains `dec1` through `dec10`, plus `mkt-rf` and `rf` by default.
@@ -542,7 +574,7 @@ With `details=True`, the function also prints the strategy title,
 portfolio-construction details, and the available date range. It still returns
 the same DataFrame.
 
-### Examples
+#### Examples
 
 Display the available strategies:
 

@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import pytest
 
 import farms as fm
@@ -176,6 +177,64 @@ def test_factor_tilt_portfolio_supports_a_nonzero_base_index():
     )
 
     assert exposures[1] == pytest.approx(1.0)
+
+
+def test_historical_factor_tilt_portfolio_estimates_inputs_and_returns_diagnostics():
+    returns = pd.DataFrame(
+        {
+            "base": [0.010, 0.020, 0.030, 0.000, 0.040, 0.015],
+            "tilt": [0.020, 0.010, 0.040, 0.030, 0.000, 0.025],
+        }
+    )
+
+    result = fm.historical_factor_tilt_portfolio(
+        returns,
+        base_column="base",
+        tilt_bounds=(0.0, 0.0),
+        return_result=True,
+    )
+
+    assert isinstance(result, fm.HistoricalFactorTiltResult)
+    np.testing.assert_allclose(result.weights, [1.0, 0.0])
+    np.testing.assert_allclose(result.mean_excess_returns, returns.mean().to_numpy())
+    np.testing.assert_allclose(result.covariance_matrix, returns.cov().to_numpy())
+    assert result.observations == len(returns)
+    assert result.base_column == "base"
+    assert result.sharpe == pytest.approx(result.expected_return / result.volatility)
+    assert result.as_tuple()[1:] == pytest.approx(
+        (result.expected_return, result.volatility)
+    )
+
+
+def test_historical_factor_tilt_portfolio_drops_invalid_rows_and_uses_default_base():
+    returns = np.array(
+        [
+            [0.010, 0.020],
+            [0.020, 0.010],
+            [np.nan, 0.040],
+            [0.000, 0.030],
+            [0.040, 0.000],
+            [0.015, 0.025],
+        ]
+    )
+
+    result = fm.historical_factor_tilt_portfolio(
+        returns,
+        tilt_bounds=(0.0, 0.0),
+        return_result=True,
+    )
+
+    assert result.weights[0] == pytest.approx(1.0)
+    assert result.observations == 5
+    assert result.base_column == 0
+
+
+def test_historical_factor_tilt_portfolio_can_reject_invalid_rows():
+    with pytest.raises(ValueError, match="missing or non-finite"):
+        fm.historical_factor_tilt_portfolio(
+            np.array([[0.01, 0.02], [np.nan, 0.03]]),
+            missing="raise",
+        )
 
 
 @pytest.mark.parametrize(

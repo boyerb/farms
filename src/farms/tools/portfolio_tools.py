@@ -24,6 +24,28 @@ class PortfolioResult:
         """Return the legacy ``(weights, expected_return, volatility)`` form."""
         return self.weights, self.expected_return, self.volatility
 
+
+@dataclass(frozen=True)
+class HistoricalFactorTiltResult:
+    """Diagnostics returned by :func:`historical_factor_tilt_portfolio`."""
+
+    weights: FloatArray
+    expected_return: float
+    volatility: float
+    variance: float
+    sharpe: float
+    mean_excess_returns: FloatArray
+    covariance_matrix: FloatArray
+    observations: int
+    base_column: object
+    solver: str
+    message: str
+    column_labels: tuple[object, ...] | None = None
+
+    def as_tuple(self) -> tuple[FloatArray, float, float]:
+        """Return the standard ``(weights, expected_return, volatility)`` form."""
+        return self.weights, self.expected_return, self.volatility
+
 def describe(name, series):
     std = np.std(series)         # Compute the standard deviation (volatility)
     mean = np.mean(series)       # Compute the mean (average return)
@@ -808,3 +830,160 @@ def factor_tilt_portfolio(
     if not np.isclose(exposures[base_index], 1.0, atol=10 * tolerance, rtol=0.0):
         raise ValueError("portfolio optimization changed the fixed base exposure")
     return _portfolio_summary(exposures, mu, sigma)
+
+
+def _prepare_historical_returns(
+    returns: ArrayLike,
+    *,
+    base_column: int | object,
+    missing: str,
+    min_observations: int,
+    ddof: int,
+) -> tuple[FloatArray, int, object, tuple[object, ...] | None]:
+    """Convert, validate, and clean historical returns for tilt optimization."""
+    if missing not in {"drop", "raise"}:
+        raise ValueError("missing must be either 'drop' or 'raise'")
+    if (
+        not isinstance(min_observations, (int, np.integer))
+        or isinstance(min_observations, (bool, np.bool_))
+        or min_observations <= 0
+    ):
+        raise ValueError("min_observations must be a positive integer")
+    if (
+        not isinstance(ddof, (int, np.integer))
+        or isinstance(ddof, (bool, np.bool_))
+        or ddof < 0
+    ):
+        raise ValueError("ddof must be a nonnegative integer")
+
+    columns = getattr(returns, "columns", None)
+    column_labels = tuple(columns) if columns is not None else None
+    try:
+        if hasattr(returns, "to_numpy"):
+            values = np.asarray(returns.to_numpy(dtype=float, copy=True), dtype=float)
+        else:
+            values = np.asarray(returns, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise TypeError("returns must be a numeric two-dimensional array or DataFrame") from exc
+
+    if values.ndim != 2:
+        raise ValueError("returns must be a two-dimensional array or DataFrame")
+    if values.shape[1] < 2:
+        raise ValueError(
+            "historical_factor_tilt_portfolio requires a base return and at least one zero-cost return"
+        )
+    if column_labels is not None and len(column_labels) != values.shape[1]:
+        raise ValueError("returns column labels do not match the number of return columns")
+
+    if not isinstance(base_column, (int, np.integer)) or isinstance(base_column, (bool, np.bool_)):
+        if column_labels is None:
+            raise TypeError("base_column must be an integer for array-like returns")
+        matches = [index for index, label in enumerate(column_labels) if label == base_column]
+        if len(matches) != 1:
+            raise ValueError("base_column must identify exactly one return column")
+        base_index = matches[0]
+    elif 0 <= int(base_column) < values.shape[1]:
+        base_index = int(base_column)
+    elif column_labels is not None:
+        matches = [index for index, label in enumerate(column_labels) if label == base_column]
+        if len(matches) != 1:
+            raise ValueError("base_column must identify a return column")
+        base_index = matches[0]
+    else:
+        raise ValueError("base_column must identify a return column")
+
+    finite_rows = np.all(np.isfinite(values), axis=1)
+    if missing == "raise" and not np.all(finite_rows):
+        raise ValueError("returns contain missing or non-finite observations")
+    if missing == "drop":
+        values = values[finite_rows]
+
+    if values.shape[0] < min_observations:
+        raise ValueError(
+            f"returns must contain at least {min_observations} valid observations"
+        )
+    if values.shape[0] <= ddof:
+        raise ValueError("ddof must be smaller than the number of valid observations")
+
+    selected_base = column_labels[base_index] if column_labels is not None else base_index
+    return values, base_index, selected_base, column_labels
+
+
+def historical_factor_tilt_portfolio(
+    returns: ArrayLike,
+    *,
+    base_column: int | object = 0,
+    tilt_bounds: tuple[float | None, float | None]
+    | list[tuple[float | None, float | None]]
+    | None = None,
+    initial_tilts: ArrayLike | None = None,
+    ddof: int = 1,
+    min_observations: int = 2,
+    missing: str = "drop",
+    tolerance: float = 1e-8,
+    maxiter: int = 1_000,
+    covariance_tolerance: float = 1e-10,
+    regularization: float = 0.0,
+    return_result: bool = False,
+) -> tuple[FloatArray, float, float] | HistoricalFactorTiltResult:
+    """Optimize zero-cost portfolio tilts from historical excess returns.
+
+    ``returns`` must contain one base portfolio return series and at least one
+    zero-cost portfolio return series. The base series is assumed to already
+    be measured as an excess return over the risk-free rate. The other series
+    are treated as zero-cost returns, so no fully-invested weight constraint is
+    imposed on them. The base exposure is fixed at one and the remaining
+    exposures maximize the estimated excess-return Sharpe ratio.
+
+    Integer ``base_column`` values select a column position. For a DataFrame,
+    a non-integer value selects a column label. By default, rows containing a
+    missing or non-finite value in any column are removed before estimating the
+    mean vector and covariance matrix.
+    """
+    _validate_optimization_options(tolerance, maxiter)
+    values, base_index, selected_base, column_labels = _prepare_historical_returns(
+        returns,
+        base_column=base_column,
+        missing=missing,
+        min_observations=min_observations,
+        ddof=ddof,
+    )
+
+    mean_excess_returns = np.mean(values, axis=0)
+    sample_covariance = np.cov(values, rowvar=False, ddof=ddof)
+    mean_excess_returns, covariance_matrix, _ = _prepare_sharpe_inputs(
+        mean_excess_returns,
+        sample_covariance,
+        rf=0.0,
+        covariance_tolerance=covariance_tolerance,
+        regularization=regularization,
+    )
+
+    exposures, expected_return, volatility = factor_tilt_portfolio(
+        mean_excess_returns,
+        covariance_matrix,
+        rf=0.0,
+        base_index=base_index,
+        tilt_bounds=tilt_bounds,
+        initial_tilts=initial_tilts,
+        tolerance=tolerance,
+        maxiter=maxiter,
+        covariance_tolerance=covariance_tolerance,
+        regularization=0.0,
+    )
+    variance = float(volatility**2)
+    result = HistoricalFactorTiltResult(
+        weights=exposures,
+        expected_return=expected_return,
+        volatility=volatility,
+        variance=variance,
+        sharpe=float(expected_return / volatility),
+        mean_excess_returns=mean_excess_returns,
+        covariance_matrix=covariance_matrix,
+        observations=values.shape[0],
+        base_column=selected_base,
+        solver="slsqp",
+        message="SLSQP Sharpe-ratio optimization with fixed base exposure",
+        column_labels=column_labels,
+    )
+    return result if return_result else result.as_tuple()

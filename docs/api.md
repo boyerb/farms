@@ -4,9 +4,11 @@ This page documents the public functions exported by `farms`. Each function
 lists its required inputs, optional inputs, and outputs. Returns are generally
 decimal returns: `0.01` represents 1 percent.
 
-## Alpha Vantage data
+## Pipelines
 
-### `get_alpha_vantage_api_key()`
+### Alpha Vantage data
+
+#### `get_alpha_vantage_api_key()`
 
 Returns the Alpha Vantage API key from Colab Secrets or the local
 `ALPHAVANTAGE_API_KEY` environment variable.
@@ -24,7 +26,7 @@ Returns the Alpha Vantage API key from Colab Secrets or the local
 - `str` — The configured Alpha Vantage API key. Raises an error when no valid
   key is available.
 
-### `load_alpha_vantage()`
+#### `load_alpha_vantage()`
 
 Downloads one selected Alpha Vantage series for one or more tickers and can
 merge Ken French factor returns.
@@ -50,7 +52,7 @@ merge Ken French factor returns.
 
 - `pandas.DataFrame` — A date-indexed DataFrame containing one selected series per ticker and any requested factor columns. The result includes metadata in `DataFrame.attrs` for symbols, frequency, field, and factor selection.
 
-### `load_alpha_vantage_monthly()`
+#### `load_alpha_vantage_monthly()`
 
 Downloads monthly adjusted Alpha Vantage data.
 
@@ -73,7 +75,7 @@ Downloads monthly adjusted Alpha Vantage data.
 
 - `pandas.DataFrame` — Monthly adjusted data indexed by a monthly `PeriodIndex`. The default output includes parsed price fields and `Return`.
 
-### `load_alpha_vantage_weekly()`
+#### `load_alpha_vantage_weekly()`
 
 Downloads weekly adjusted Alpha Vantage data.
 
@@ -96,7 +98,7 @@ Downloads weekly adjusted Alpha Vantage data.
 
 - `pandas.DataFrame` — Weekly adjusted data indexed by a weekly `PeriodIndex`. The default output includes parsed price fields and `Return`.
 
-### `load_alpha_vantage_daily()`
+#### `load_alpha_vantage_daily()`
 
 Compatibility wrapper for the premium Alpha Vantage daily endpoint. The daily
 adjusted endpoint is not supported for ordinary free-account use.
@@ -121,7 +123,7 @@ adjusted endpoint is not supported for ordinary free-account use.
 
 - `pandas.DataFrame` — Parsed daily data when the endpoint is available. Premium-access or endpoint errors are raised rather than silently returning incomplete data.
 
-### `format_alpha_vantage()`
+#### `format_alpha_vantage()`
 
 Formats a monthly Alpha Vantage `requests.Response` without performing a
 network request.
@@ -140,7 +142,7 @@ network request.
 
 - `pandas.DataFrame` — Formatted monthly data indexed by a monthly `PeriodIndex`. The default includes `Return`, whose first observation is `NaN`.
 
-### `format_alpha_vantage_weekly()`
+#### `format_alpha_vantage_weekly()`
 
 Formats a weekly Alpha Vantage response without performing a network request.
 
@@ -158,7 +160,7 @@ Formats a weekly Alpha Vantage response without performing a network request.
 
 - `pandas.DataFrame` — Formatted weekly data indexed by a weekly `PeriodIndex`. The default includes `Return`.
 
-### `format_alpha_vantage_daily()`
+#### `format_alpha_vantage_daily()`
 
 Compatibility wrapper for formatting a daily Alpha Vantage response.
 
@@ -176,7 +178,7 @@ Compatibility wrapper for formatting a daily Alpha Vantage response.
 
 - `pandas.DataFrame` — Formatted daily data when the endpoint response is valid.
 
-### `format_alpha_vantage_time_series()`
+#### `format_alpha_vantage_time_series()`
 
 Formats an adjusted Alpha Vantage response for monthly or weekly data.
 
@@ -195,9 +197,9 @@ Formats an adjusted Alpha Vantage response for monthly or weekly data.
 
 - `pandas.DataFrame` — A normalized DataFrame with a frequency-specific `PeriodIndex`. The default output includes `Return` as the final column.
 
-## CRSP data
+### CRSP data
 
-### `load_crsp_data()` / `get_crsp_msf_by_ids()`
+#### `load_crsp_data()` / `get_crsp_msf_by_ids()`
 
 `get_crsp_msf_by_ids()` is the public compatibility name for the same CRSP
 identifier-based loader.
@@ -220,7 +222,7 @@ identifier-based loader.
 
 - `pandas.DataFrame` — Chronologically sorted CRSP observations with a `date` index and CRSP security, price, return, volume, and share-count columns. Monthly results use a `PeriodIndex`; daily results use a `DatetimeIndex`. Requested factor columns are included when selected.
 
-### `load_all_crsp_data()`
+#### `load_all_crsp_data()`
 
 Loads CRSP data for all securities in a date range, optionally applying
 beginning-of-period screens.
@@ -245,9 +247,9 @@ beginning-of-period screens.
 
 - `pandas.DataFrame` — CRSP observations for all securities satisfying the requested screens. Monthly results use a monthly `PeriodIndex`; daily results use a `DatetimeIndex`.
 
-## Kenneth French data
+### Kenneth French data
 
-### `list_ken_french_data()`
+#### `list_ken_french_data()`
 
 Lists the registered Ken French portfolio strategy sources without downloading
 the return data.
@@ -264,7 +266,7 @@ the return data.
 
 - `pandas.DataFrame` — One row for each registered strategy, portfolio granularity, and frequency combination.
 
-### `load_ken_french_data()`
+#### `load_ken_french_data()`
 
 Loads normalized data from the Kenneth French Data Library.
 
@@ -287,7 +289,7 @@ Loads normalized data from the Kenneth French Data Library.
 
 - `pandas.DataFrame` — Normalized factor or portfolio returns indexed by the observation date. Portfolio columns use decimal returns; optional factor columns include standardized names such as `mkt-rf`, `smb`, `hml`, `rmw`, `cma`, and `rf`.
 
-### `get_ff3()`
+#### `get_ff3()`
 
 Returns monthly Fama-French three-factor data.
 
@@ -304,7 +306,7 @@ Returns monthly Fama-French three-factor data.
 
 - `pandas.DataFrame` — Monthly decimal-return Fama-French three-factor data, including `mkt-rf`, `smb`, `hml`, and `rf`.
 
-### `get_ff5()`
+#### `get_ff5()`
 
 Returns monthly Fama-French five-factor data.
 
@@ -321,7 +323,7 @@ Returns monthly Fama-French five-factor data.
 
 - `pandas.DataFrame` — Monthly decimal-return Fama-French five-factor data, including `mkt-rf`, `smb`, `hml`, `rmw`, `cma`, and `rf`.
 
-### `get_ff3d()`
+#### `get_ff3d()`
 
 Returns daily Fama-French three-factor data.
 
@@ -338,7 +340,7 @@ Returns daily Fama-French three-factor data.
 
 - `pandas.DataFrame` — Daily decimal-return Fama-French three-factor data, including `mkt-rf`, `smb`, `hml`, and `rf`.
 
-### `get_ff5d()`
+#### `get_ff5d()`
 
 Returns daily Fama-French five-factor data.
 
@@ -355,7 +357,7 @@ Returns daily Fama-French five-factor data.
 
 - `pandas.DataFrame` — Daily decimal-return Fama-French five-factor data, including `mkt-rf`, `smb`, `hml`, `rmw`, `cma`, and `rf`.
 
-### `market()`
+#### `market()`
 
 Returns the market excess return and risk-free rate from the Ken French FF3
 data.
@@ -374,7 +376,7 @@ data.
 
 - `pandas.DataFrame` — A date-indexed DataFrame with decimal-return columns `mkt-rf` and `rf`.
 
-### `get_ken_french_deciles()`
+#### `get_ken_french_deciles()`
 
 Legacy wrapper for monthly value-weighted Kenneth French decile portfolios.
 
@@ -394,9 +396,11 @@ Legacy wrapper for monthly value-weighted Kenneth French decile portfolios.
 - `pandas.DataFrame` — Monthly value-weighted decile returns, optionally merged with factor columns.
 - `None` — When `stype='list'`, the registered strategy names are printed and no DataFrame is returned.
 
-## Black-Scholes option functions
+## Tools
 
-### `black_scholes()`
+### Black-Scholes option functions
+
+#### `black_scholes()`
 
 Calculates a Black-Scholes call or put option value.
 
@@ -417,7 +421,7 @@ Calculates a Black-Scholes call or put option value.
 
 - `float` — The Black-Scholes option value.
 
-### `implied_volatility()`
+#### `implied_volatility()`
 
 Solves for the volatility that matches a target option price.
 
@@ -439,9 +443,9 @@ Solves for the volatility that matches a target option price.
 - `float` — Implied volatility found between `1e-6` and `5.0`.
 - `numpy.nan` — Returned when no root exists in the search interval.
 
-## Portfolio functions
+### Portfolio functions
 
-### `efrs_portfolio()` / `EFRS_portfolio()`
+#### `efrs_portfolio()` / `EFRS_portfolio()`
 
 Computes the minimum-variance fully invested portfolio for a target return.
 There is no separate risk-free allocation. `EFRS_portfolio()` is the
@@ -475,7 +479,7 @@ backward-compatible public name; `efrs_portfolio()` is the canonical name.
   - `volatility` — Square root of the computed portfolio variance.
 - `PortfolioResult` — When `return_result=True`, contains `weights`, `expected_return`, `volatility`, `variance`, `solver`, and `message`. Its `as_tuple()` method returns the legacy tuple.
 
-### `portfolio_volatility()`
+#### `portfolio_volatility()`
 
 Calculates portfolio volatility from weights and a covariance matrix.
 
@@ -492,7 +496,7 @@ Calculates portfolio volatility from weights and a covariance matrix.
 
 - `float` or `numpy.float64` — Square root of `weights.T @ covariance_matrix @ weights`.
 
-### `portfolio_sharpe()`
+#### `portfolio_sharpe()`
 
 Calculates a portfolio Sharpe ratio.
 
@@ -511,7 +515,7 @@ Calculates a portfolio Sharpe ratio.
 
 - `float` — Portfolio excess return divided by portfolio volatility, or portfolio return divided by volatility when `zerocost` is truthy.
 
-### `tangent_portfolio()`
+#### `tangent_portfolio()`
 
 Calculates the maximum-Sharpe fully invested portfolio of ordinary assets.
 The returned exposures are ordinary asset weights and sum to one.
@@ -547,7 +551,7 @@ exposures, expected_return, volatility = tangent_portfolio(
 )
 ```
 
-### `factor_tilt_portfolio()`
+#### `factor_tilt_portfolio()`
 
 Calculates the maximum-Sharpe factor exposures around a fixed base exposure.
 Use this when one return series is a base portfolio, such as the market, and
@@ -601,7 +605,54 @@ The covariance matrix must use the same ordering as `expected_returns`. The
 factor return series should be measured on the same frequency and return
 convention as the base series.
 
-### `describe()`
+#### `historical_factor_tilt_portfolio()`
+
+Estimates mean excess returns and their covariance matrix from historical
+returns, then calculates maximum-Sharpe zero-cost tilts around a fixed base
+portfolio. The base return column must already be an excess return over the
+risk-free rate. The base exposure is fixed at `1.0`; zero-cost exposures do
+not have to sum to one.
+
+**Required Inputs**
+
+- `returns` — A numeric two-dimensional array or DataFrame containing the base
+  excess returns and one or more zero-cost portfolio returns.
+
+**Optional Inputs**
+
+- `base_column` — Default is `0`. Integer values select a column position; for
+  a DataFrame, non-integer values select a column label.
+- `tilt_bounds` — Optional bounds on the zero-cost portfolio exposures.
+- `initial_tilts` — Optional starting values for the zero-cost exposures.
+- `ddof` — Default is `1`. Degrees of freedom used for sample covariance.
+- `min_observations` — Default is `2`. Minimum number of valid rows required.
+- `missing` — Default is `"drop"`. Drop invalid rows or use `"raise"` to reject
+  missing or non-finite observations.
+- `tolerance` — Default is `1e-8`. Optimization tolerance.
+- `maxiter` — Default is `1000`. Maximum number of optimizer iterations.
+- `covariance_tolerance` — Default is `1e-10`. Covariance validation tolerance.
+- `regularization` — Default is `0.0`. Optional diagonal covariance
+  regularization for ill-conditioned historical estimates.
+- `return_result` — Default is `False`. Return a
+  `HistoricalFactorTiltResult` with diagnostics instead of the standard tuple.
+
+**Outputs**
+
+- `tuple` — Returns `(weights, expected_return, volatility)`.
+- `HistoricalFactorTiltResult` — When `return_result=True`, includes the
+  weights, estimated mean excess returns, covariance matrix, Sharpe ratio,
+  variance, observation count, and solver diagnostics.
+
+For a DataFrame with columns `"Market"`, `"SMB"`, and `"HML"`:
+
+```python
+weights, expected_return, volatility = historical_factor_tilt_portfolio(
+    returns,
+    base_column="Market",
+)
+```
+
+#### `describe()`
 
 Prints the mean and standard deviation of a series.
 
@@ -618,9 +669,9 @@ Prints the mean and standard deviation of a series.
 
 - `None` — Prints a formatted summary line and does not return a value.
 
-## Plotting functions
+### Plotting functions
 
-### `plot_return_bars()`
+#### `plot_return_bars()`
 
 Plots relative frequencies for discrete simulated return outcomes.
 
@@ -641,7 +692,7 @@ Plots relative frequencies for discrete simulated return outcomes.
 
 - `tuple` — Returns `(figure, axis)` containing the Matplotlib Figure and Axes objects.
 
-### `plot_return_histograms()`
+#### `plot_return_histograms()`
 
 Plots return distributions for selected DataFrame columns.
 
@@ -665,7 +716,7 @@ Plots return distributions for selected DataFrame columns.
 
 - `tuple` — Returns `(figure, axes)`, where `axes` contains the visible Matplotlib Axes for the selected columns.
 
-### `plot_return_scatter()`
+#### `plot_return_scatter()`
 
 Plots selected portfolio returns against a benchmark.
 
@@ -689,7 +740,7 @@ Plots selected portfolio returns against a benchmark.
 
 - `tuple` — Returns `(figure, axes)`, where `axes` contains one visible Matplotlib Axes per selected return column.
 
-### `plot_cumulative_wealth()`
+#### `plot_cumulative_wealth()`
 
 Plots the growth of one dollar invested in selected portfolios.
 
@@ -713,9 +764,9 @@ Plots the growth of one dollar invested in selected portfolios.
 
 - `tuple` — Returns `(figure, axis)` containing the Matplotlib Figure and Axes objects.
 
-## Statistics and regression functions
+### Statistics and regression functions
 
-### `summary_stats()`
+#### `summary_stats()`
 
 Calculates annualized summary statistics for portfolio returns.
 
@@ -732,7 +783,7 @@ Calculates annualized summary statistics for portfolio returns.
 
 - `pandas.DataFrame` — One row per return column with `Observations`, `Annualized arithmetic mean`, and `Annualized volatility`. When `risk_free` is supplied, also includes `Annualized excess mean` and `Annualized Sharpe ratio`.
 
-### `intercept()`
+#### `intercept()`
 
 Fits an OLS regression with an intercept and returns the estimated intercept.
 
@@ -749,7 +800,7 @@ Fits an OLS regression with an intercept and returns the estimated intercept.
 
 - `float` or `numpy` scalar — Estimated regression intercept.
 
-### `slope()`
+#### `slope()`
 
 Fits an OLS regression with an intercept and returns the estimated slope.
 
@@ -766,7 +817,7 @@ Fits an OLS regression with an intercept and returns the estimated slope.
 
 - `float` or `numpy` scalar — Estimated regression slope.
 
-### `linear_regression_summary()`
+#### `linear_regression_summary()`
 
 Fits an OLS regression and returns coefficient estimates with confidence
 intervals.
