@@ -500,55 +500,311 @@ def portfolio_sharpe(weights: np.ndarray, expected_returns: np.ndarray,
     return Sharpe
 
 
-def tangent_portfolio(expected_returns, covariance_matrix, rf=None, factors=None):
+def _prepare_sharpe_inputs(
+    expected_returns: ArrayLike,
+    covariance_matrix: ArrayLike,
+    *,
+    rf: float,
+    covariance_tolerance: float,
+    regularization: float,
+) -> tuple[FloatArray, FloatArray, float]:
+    """Prepare inputs for a Sharpe-ratio optimization."""
+    if not np.isscalar(rf) or not np.isfinite(rf):
+        raise ValueError("rf must be a finite scalar")
+
+    mu, sigma = _prepare_portfolio_inputs(
+        expected_returns,
+        covariance_matrix,
+        covariance_tolerance=covariance_tolerance,
+        regularization=regularization,
+    )
+
+    scale = max(float(np.max(np.abs(sigma))), np.finfo(float).eps)
+    minimum_eigenvalue = float(np.linalg.eigvalsh(sigma)[0])
+    if minimum_eigenvalue <= covariance_tolerance * scale:
+        raise ValueError(
+            "covariance_matrix must be positive definite for Sharpe-ratio optimization"
+        )
+
+    return mu, sigma, float(rf)
+
+
+def _validate_optimization_options(tolerance: float, maxiter: int) -> None:
+    """Validate common numerical-optimization options."""
+    if not np.isscalar(tolerance) or not np.isfinite(tolerance) or tolerance <= 0:
+        raise ValueError("tolerance must be a positive finite scalar")
+    if not isinstance(maxiter, (int, np.integer)) or maxiter <= 0:
+        raise ValueError("maxiter must be a positive integer")
+
+
+def _negative_sharpe(
+    exposures: FloatArray,
+    expected_returns: FloatArray,
+    covariance_matrix: FloatArray,
+    rf: float,
+) -> float:
+    """Return the negative Sharpe ratio for an exposure vector."""
+    variance = float(exposures @ covariance_matrix @ exposures)
+    volatility = float(np.sqrt(variance))
+    excess_return = float(exposures @ expected_returns) - rf
+    return -excess_return / volatility
+
+
+def _negative_sharpe_gradient(
+    exposures: FloatArray,
+    expected_returns: FloatArray,
+    covariance_matrix: FloatArray,
+    rf: float,
+) -> FloatArray:
+    """Return the gradient of the negative Sharpe ratio."""
+    variance = float(exposures @ covariance_matrix @ exposures)
+    volatility = float(np.sqrt(variance))
+    excess_return = float(exposures @ expected_returns) - rf
+    return (
+        -expected_returns / volatility
+        + excess_return * (covariance_matrix @ exposures) / volatility**3
+    )
+
+
+def _validate_initial_exposures(
+    initial_exposures: ArrayLike,
+    n_assets: int,
+    bounds: list[tuple[float | None, float | None]],
+    *,
+    tolerance: float,
+) -> FloatArray:
+    """Validate an optimizer starting point against its bounds."""
+    try:
+        exposures = np.asarray(initial_exposures, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise TypeError("initial exposures must be numeric") from exc
+    if exposures.shape != (n_assets,) or not np.all(np.isfinite(exposures)):
+        raise ValueError("initial exposures must be a finite vector with one value per asset")
+
+    for exposure, (lower, upper) in zip(exposures, bounds):
+        if lower is not None and exposure < lower - tolerance:
+            raise ValueError("initial exposures violate the supplied lower bounds")
+        if upper is not None and exposure > upper + tolerance:
+            raise ValueError("initial exposures violate the supplied upper bounds")
+    return exposures
+
+
+def _feasible_budget_start(
+    bounds: list[tuple[float | None, float | None]],
+) -> FloatArray:
+    """Find a feasible fully invested starting point."""
+    n_assets = len(bounds)
+    result = linprog(
+        c=np.zeros(n_assets),
+        A_eq=np.ones((1, n_assets)),
+        b_eq=np.array([1.0]),
+        bounds=bounds,
+        method="highs",
+    )
+    if not result.success:
+        raise ValueError("the supplied bounds do not permit a fully invested portfolio")
+    return np.asarray(result.x, dtype=float)
+
+
+def _solve_sharpe_problem(
+    initial_exposures: FloatArray,
+    expected_returns: FloatArray,
+    covariance_matrix: FloatArray,
+    rf: float,
+    *,
+    bounds: list[tuple[float | None, float | None]],
+    constraints: list[dict],
+    tolerance: float,
+    maxiter: int,
+) -> FloatArray:
+    """Solve a constrained Sharpe-ratio problem and validate the result."""
+    result = minimize(
+        fun=_negative_sharpe,
+        x0=initial_exposures,
+        args=(expected_returns, covariance_matrix, rf),
+        jac=_negative_sharpe_gradient,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints,
+        options={"ftol": tolerance, "maxiter": maxiter, "disp": False},
+    )
+    if not result.success:
+        raise ValueError(f"portfolio optimization failed: {result.message}")
+
+    exposures = np.asarray(result.x, dtype=float)
+    if exposures.shape != initial_exposures.shape or not np.all(np.isfinite(exposures)):
+        raise ValueError("portfolio optimization returned invalid exposures")
+    return exposures
+
+
+def _portfolio_summary(
+    exposures: FloatArray,
+    expected_returns: FloatArray,
+    covariance_matrix: FloatArray,
+) -> tuple[FloatArray, float, float]:
+    """Calculate the return values shared by the public Sharpe optimizers."""
+    variance = float(exposures @ covariance_matrix @ exposures)
+    if variance <= 0 or not np.isfinite(variance):
+        raise ValueError("the optimized portfolio must have positive finite variance")
+    return (
+        exposures,
+        float(exposures @ expected_returns),
+        float(np.sqrt(variance)),
+    )
+
+
+def tangent_portfolio(
+    expected_returns: ArrayLike,
+    covariance_matrix: ArrayLike,
+    rf: float = 0.0,
+    *,
+    allow_short: bool = True,
+    bounds: tuple[float | None, float | None]
+    | list[tuple[float | None, float | None]]
+    | None = None,
+    initial_weights: ArrayLike | None = None,
+    tolerance: float = 1e-8,
+    maxiter: int = 1_000,
+    covariance_tolerance: float = 1e-10,
+    regularization: float = 0.0,
+) -> tuple[FloatArray, float, float]:
+    """Compute the maximum-Sharpe fully invested portfolio.
+
+    The returned exposure vector contains ordinary asset weights and therefore
+    sums to one. Short selling is allowed by default; set ``allow_short=False``
+    or provide bounds to impose investment limits.
     """
-    Calculates the weights, expected return, and volatility of the tangent portfolio.
+    if not isinstance(allow_short, (bool, np.bool_)):
+        raise TypeError("allow_short must be a boolean")
+    _validate_optimization_options(tolerance, maxiter)
+    mu, sigma, risk_free_rate = _prepare_sharpe_inputs(
+        expected_returns,
+        covariance_matrix,
+        rf=rf,
+        covariance_tolerance=covariance_tolerance,
+        regularization=regularization,
+    )
+    normalised_bounds = _normalise_bounds(
+        bounds,
+        mu.size,
+        allow_short=bool(allow_short),
+    )
 
-    Parameters:
-    expected_returns (np.array): Vector of expected returns for each asset.
-    covariance_matrix (np.array): Covariance matrix of asset returns.
-    rf (float): Risk-free rate of return.
-
-    Returns:
-    tuple: A tuple containing the tangent portfolio weights, expected return, and volatility.
-    """
-    N = expected_returns.shape[0]
-    initial_weights = np.ones(N) / N  # Initialize as a 1D column vector
-
-    if factors is not True:
-        constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})  # Constraint: weights sum to 1
-
-        def neg_portfolio_sharpe(x, expected_returns, covariance_matrix, rf):
-            return -portfolio_sharpe(x, expected_returns, covariance_matrix, rf)
-
-        # Perform optimization
-        result = minimize(fun=neg_portfolio_sharpe, x0=initial_weights, args=(expected_returns, covariance_matrix, rf),
-                      method="SLSQP", constraints=constraints)
-
-        # Ensure result.x is reshaped as a column vector (N x 1)
-        tangent_weights = result.x
-
-        # Compute expected return and volatility for the tangent portfolio
-        tangent_return = tangent_weights.T @ expected_returns
-        tangent_volatility = portfolio_volatility(tangent_weights, covariance_matrix)
+    if initial_weights is None:
+        initial_exposures = _feasible_budget_start(normalised_bounds)
     else:
-        constraints = ({'type': 'eq', 'fun': lambda x: x[0] - 1})  # Constraint: weights sum to 1
+        initial_exposures = _validate_initial_exposures(
+            initial_weights,
+            mu.size,
+            normalised_bounds,
+            tolerance=tolerance,
+        )
+        if not np.isclose(np.sum(initial_exposures), 1.0, atol=tolerance, rtol=0.0):
+            raise ValueError("initial_weights must sum to one")
 
-        def neg_portfolio_sharpe(x, expected_returns, covariance_matrix):
-            return -portfolio_sharpe(
-                x, expected_returns, covariance_matrix, zerocost=True
-            )
-
-        # Perform optimization
-        result = minimize(fun=neg_portfolio_sharpe, x0=initial_weights, args=(expected_returns, covariance_matrix),
-                      method="SLSQP", constraints=constraints)
-
-        # Ensure result.x is reshaped as a column vector (N x 1)
-        tangent_weights = result.x
-
-        # Compute expected return and volatility for the tangent portfolio
-        tangent_return = tangent_weights.T @ expected_returns
-        tangent_volatility = portfolio_volatility(tangent_weights, covariance_matrix)
+    exposures = _solve_sharpe_problem(
+        initial_exposures,
+        mu,
+        sigma,
+        risk_free_rate,
+        bounds=normalised_bounds,
+        constraints=[{"type": "eq", "fun": lambda x: np.sum(x) - 1.0}],
+        tolerance=tolerance,
+        maxiter=maxiter,
+    )
+    if not np.isclose(np.sum(exposures), 1.0, atol=10 * tolerance, rtol=0.0):
+        raise ValueError("portfolio optimization returned weights that do not sum to one")
+    return _portfolio_summary(exposures, mu, sigma)
 
 
-    return tangent_weights, tangent_return, tangent_volatility
+def factor_tilt_portfolio(
+    expected_returns: ArrayLike,
+    covariance_matrix: ArrayLike,
+    rf: float = 0.0,
+    *,
+    base_index: int = 0,
+    tilt_bounds: tuple[float | None, float | None]
+    | list[tuple[float | None, float | None]]
+    | None = None,
+    initial_tilts: ArrayLike | None = None,
+    tolerance: float = 1e-8,
+    maxiter: int = 1_000,
+    covariance_tolerance: float = 1e-10,
+    regularization: float = 0.0,
+) -> tuple[FloatArray, float, float]:
+    """Optimize zero-cost factor tilts around a fixed base exposure.
+
+    ``expected_returns`` and ``covariance_matrix`` must be ordered with the
+    base return first (for example, market total return), followed by returns
+    of zero-cost factor portfolios (for example, SMB, HML, and MOM). The base
+    exposure is fixed at one, while the remaining exposures are optimized.
+
+    The returned exposure vector is ``[1, tilt_1, ..., tilt_k]`` in the same
+    order as the inputs. The Sharpe numerator is the expected portfolio return
+    minus ``rf``; zero-cost factors do not change the budget constraint, but
+    their returns still contribute to the portfolio return and volatility.
+    """
+    if not isinstance(base_index, (int, np.integer)) or isinstance(base_index, bool):
+        raise TypeError("base_index must be an integer")
+    _validate_optimization_options(tolerance, maxiter)
+    mu, sigma, risk_free_rate = _prepare_sharpe_inputs(
+        expected_returns,
+        covariance_matrix,
+        rf=rf,
+        covariance_tolerance=covariance_tolerance,
+        regularization=regularization,
+    )
+    n_assets = mu.size
+    if n_assets < 2:
+        raise ValueError("factor_tilt_portfolio requires a base return and at least one factor return")
+    if not 0 <= base_index < n_assets:
+        raise ValueError("base_index must identify an entry in expected_returns")
+
+    factor_count = n_assets - 1
+    normalised_tilt_bounds = _normalise_bounds(
+        tilt_bounds,
+        factor_count,
+        allow_short=True,
+    )
+    normalised_bounds: list[tuple[float | None, float | None]] = []
+    bound_index = 0
+    for asset_index in range(n_assets):
+        if asset_index == base_index:
+            normalised_bounds.append((1.0, 1.0))
+        else:
+            normalised_bounds.append(normalised_tilt_bounds[bound_index])
+            bound_index += 1
+
+    if initial_tilts is None:
+        initial_exposures = np.zeros(n_assets, dtype=float)
+        initial_exposures[base_index] = 1.0
+    else:
+        try:
+            tilts = np.asarray(initial_tilts, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise TypeError("initial_tilts must be numeric") from exc
+        if tilts.shape != (factor_count,) or not np.all(np.isfinite(tilts)):
+            raise ValueError("initial_tilts must have one finite value per factor")
+        initial_exposures = np.empty(n_assets, dtype=float)
+        initial_exposures[base_index] = 1.0
+        initial_exposures[np.arange(n_assets) != base_index] = tilts
+
+    initial_exposures = _validate_initial_exposures(
+        initial_exposures,
+        n_assets,
+        normalised_bounds,
+        tolerance=tolerance,
+    )
+    exposures = _solve_sharpe_problem(
+        initial_exposures,
+        mu,
+        sigma,
+        risk_free_rate,
+        bounds=normalised_bounds,
+        constraints=[],
+        tolerance=tolerance,
+        maxiter=maxiter,
+    )
+    if not np.isclose(exposures[base_index], 1.0, atol=10 * tolerance, rtol=0.0):
+        raise ValueError("portfolio optimization changed the fixed base exposure")
+    return _portfolio_summary(exposures, mu, sigma)

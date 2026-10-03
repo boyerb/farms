@@ -107,3 +107,90 @@ def test_efrs_portfolio_supports_global_bounds_and_gross_exposure(portfolio_inpu
     assert np.all(weights >= -1.0 - 1e-8)
     assert np.abs(weights).sum() <= 1.5 + 1e-7
 
+
+def test_tangent_portfolio_returns_fully_invested_exposures(portfolio_inputs):
+    expected_returns, covariance_matrix = portfolio_inputs
+
+    exposures, expected_return, volatility = fm.tangent_portfolio(
+        expected_returns,
+        covariance_matrix,
+        rf=0.02,
+    )
+
+    assert exposures.shape == expected_returns.shape
+    assert exposures.sum() == pytest.approx(1.0)
+    assert expected_return == pytest.approx(exposures @ expected_returns)
+    assert volatility == pytest.approx(
+        np.sqrt(exposures @ covariance_matrix @ exposures)
+    )
+
+
+def test_tangent_portfolio_supports_long_only_bounds(portfolio_inputs):
+    expected_returns, covariance_matrix = portfolio_inputs
+
+    exposures, _, _ = fm.tangent_portfolio(
+        expected_returns,
+        covariance_matrix,
+        rf=0.02,
+        allow_short=False,
+    )
+
+    assert np.all(exposures >= -1e-8)
+    assert exposures.sum() == pytest.approx(1.0)
+
+
+def test_factor_tilt_portfolio_returns_base_and_factor_exposures():
+    expected_returns = np.array([0.08, 0.02, 0.03, 0.01])
+    covariance_matrix = np.array(
+        [
+            [0.04, 0.00, 0.00, 0.00],
+            [0.00, 0.02, 0.00, 0.00],
+            [0.00, 0.00, 0.03, 0.00],
+            [0.00, 0.00, 0.00, 0.01],
+        ]
+    )
+
+    exposures, expected_return, volatility = fm.factor_tilt_portfolio(
+        expected_returns,
+        covariance_matrix,
+        rf=0.03,
+    )
+
+    assert exposures[0] == pytest.approx(1.0)
+    assert exposures.shape == expected_returns.shape
+    assert expected_return == pytest.approx(exposures @ expected_returns)
+    assert volatility == pytest.approx(
+        np.sqrt(exposures @ covariance_matrix @ exposures)
+    )
+
+
+def test_factor_tilt_portfolio_supports_a_nonzero_base_index():
+    expected_returns = np.array([0.02, 0.08, 0.03])
+    covariance_matrix = np.diag([0.02, 0.04, 0.03])
+
+    exposures, _, _ = fm.factor_tilt_portfolio(
+        expected_returns,
+        covariance_matrix,
+        rf=0.01,
+        base_index=1,
+    )
+
+    assert exposures[1] == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize(
+    "function, kwargs",
+    [
+        (fm.tangent_portfolio, {}),
+        (fm.factor_tilt_portfolio, {}),
+    ],
+)
+def test_sharpe_portfolio_functions_reject_singular_covariance(function, kwargs):
+    with pytest.raises(ValueError, match="positive definite"):
+        function(
+            np.array([0.05, 0.08]),
+            np.zeros((2, 2)),
+            rf=0.02,
+            **kwargs,
+        )
+
