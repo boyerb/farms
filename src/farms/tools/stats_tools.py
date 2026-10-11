@@ -115,8 +115,9 @@ def intercept(y,x):
     model = sm.OLS(y, x_with_intercept)
     results = model.fit()
 
-    # Return the slope (coefficient of x)
-    return results.params[0]  # The slope is the second parameter (after the intercept)
+    # Return the intercept (first parameter). np.asarray works whether
+    # statsmodels returns a pandas Series or a NumPy array.
+    return np.asarray(results.params)[0]
 
 
 def slope(y,x):
@@ -126,8 +127,9 @@ def slope(y,x):
     model = sm.OLS(y, x_with_intercept)
     results = model.fit()
 
-    # Return the slope (coefficient of x)
-    return results.params[1]  # The slope is the second parameter (after the intercept)
+    # Return the slope (second parameter, after the intercept). np.asarray
+    # works whether statsmodels returns a pandas Series or a NumPy array.
+    return np.asarray(results.params)[1]
 
 
 
