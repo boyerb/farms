@@ -415,7 +415,7 @@ wheels = [
 
 [[package]]
 name = "farms"
-version = "0.1.48"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "matplotlib" },
